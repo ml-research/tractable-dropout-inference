@@ -1,0 +1,3 @@
+[submodule "src/spn/experiments/RandomSPNs_layerwise/mnist_c"]
+	path = src/spn/experiments/RandomSPNs_layerwise/mnist_c
+	url = https://github.com/google-research/mnist-c

@@ -1,0 +1,16 @@
+numpy
+scipy
+sklearn
+statsmodels
+networkx
+joblib
+matplotlib
+pydot
+lark-parser
+tqdm
+ete3
+sympy
+PyQt5
+arff
+pytest
+dataclasses
