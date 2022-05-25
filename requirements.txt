@@ -14,3 +14,6 @@ PyQt5
 arff
 pytest
 dataclasses
+imageio
+scikit-image
+wand
