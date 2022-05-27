@@ -542,6 +542,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
     train_lls, class_probs_train, train_lls_sup, train_lls_unsup = evaluate_model(model, device, train_loader, "Train", output_dir=d)
     test_lls, class_probs_test, test_lls_sup, test_lls_unsup = evaluate_model(model, device, test_loader, "Test", output_dir=d)
+    print("Train class entropy: {} Test class entropy: {}".format(entropy(class_probs_train, axis=1).sum(), entropy(class_probs_test, axis=1).sum()))
 
     if training_dataset == 'cifar':
         corruptions = ['brightness', 'contrast', 'defocus_blur', 'elastic_transform', 'fog', 'frost', 'gaussian_blur', 'gaussian_noise',
@@ -559,8 +560,6 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
                 np.save(d_results + 'class_probs_c_{}_l{}'.format(corruption, cl), results_dict['c_{}_l{}'.format(corruption, cl)][1].cpu().detach().numpy())
 
 
-        sys.exit("done.")
-
     if training_dataset == 'mnist' and mnist_corruptions:
         import spn.experiments.RandomSPNs_layerwise.mnist_c.corruptions as corruptions
         severity = [1, 2, 3, 4, 5]
@@ -574,86 +573,31 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
             if cm in corruption_methods_no_severity: severity = [None]
             for sl in severity:
                 print("Corruption {}, Severity {}".format(cm.__name__, sl))
-                results_dict['c_{}_l{}'.format(cm.__name__, sl)] = evaluate_model_corrupted_digits(model, device, test_loader, "Test DROP corrupted", dropout_inference=dropout_inference, output_dir=d, corruption=cm, severity=sl)
+                results_dict['c_{}_l{}'.format(cm.__name__, sl)] = evaluate_model_corrupted_digits(model, device, test_loader, "Test DROP corrupted", dropout_inference=dropout_inference,
+                                                                                                   n_dropout_iters=n_mcd_passes, output_dir=d, corruption=cm, severity=sl)
                 np.save(d_results + 'dropout_class_probs_c_{}_l{}'.format(cm.__name__, sl), results_dict['c_{}_l{}'.format(cm.__name__, sl)][0].cpu().detach().numpy())
                 np.save(d_results + 'class_probs_c_{}_l{}'.format(cm.__name__, sl), results_dict['c_{}_l{}'.format(cm.__name__, sl)][1].cpu().detach().numpy())
-        sys.exit()
 
+        # compute max class probs
+        drop_max_class_probs = [torch.max(torch.mean(results_dict['c_{}_l1'.format(cm.__name__)][0], dim=2), dim=1)[0].cpu().detach().numpy() for cm in corruption_method]
+        drop_max_class_probs.extend([torch.max(torch.mean(results_dict['c_{}_lNone'.format(cm.__name__)][0], dim=2), dim=1)[0].cpu().detach().numpy() for cm in corruption_methods_no_severity])
 
-
-        # compute max
-        drop_max_class_probs_c1 = torch.max(torch.mean(drop_class_probs_c1, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c2 = torch.max(torch.mean(drop_class_probs_c2, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c3 = torch.max(torch.mean(drop_class_probs_c3, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c4 = torch.max(torch.mean(drop_class_probs_c4, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c5 = torch.max(torch.mean(drop_class_probs_c5, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c6 = torch.max(torch.mean(drop_class_probs_c6, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c7 = torch.max(torch.mean(drop_class_probs_c7, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c8 = torch.max(torch.mean(drop_class_probs_c8, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c9 = torch.max(torch.mean(drop_class_probs_c9, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c10 = torch.max(torch.mean(drop_class_probs_c10, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c11 = torch.max(torch.mean(drop_class_probs_c11, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c12 = torch.max(torch.mean(drop_class_probs_c12, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c13 = torch.max(torch.mean(drop_class_probs_c13, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c14 = torch.max(torch.mean(drop_class_probs_c14, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_c15 = torch.max(torch.mean(drop_class_probs_c15, dim=2), dim=1)[0].detach().cpu().numpy()
-
-        max_class_probs_c1 = torch.max(class_probs_c1, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c2 = torch.max(class_probs_c2, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c3 = torch.max(class_probs_c3, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c4 = torch.max(class_probs_c4, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c5 = torch.max(class_probs_c5, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c6 = torch.max(class_probs_c6, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c7 = torch.max(class_probs_c7, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c8 = torch.max(class_probs_c8, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c9 = torch.max(class_probs_c9, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c10 = torch.max(class_probs_c10, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c11 = torch.max(class_probs_c11, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c12 = torch.max(class_probs_c12, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c13 = torch.max(class_probs_c13, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c14 = torch.max(class_probs_c14, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_c15 = torch.max(class_probs_c15, dim=1)[0].detach().cpu().numpy()
+        max_class_probs = [torch.max(results_dict['c_{}_l1'.format(cm.__name__)][1], dim=1)[0].cpu().detach().numpy() for cm in corruption_method]
+        max_class_probs.extend([torch.max(results_dict['c_{}_lNone'.format(cm.__name__)][1], dim=1)[0].cpu().detach().numpy() for cm in corruption_methods_no_severity])
 
         # prepare boxplots data
-        boxplot_data = np.column_stack((max_class_probs_c1, max_class_probs_c2, max_class_probs_c3, max_class_probs_c4, max_class_probs_c5, max_class_probs_c6, max_class_probs_c7, max_class_probs_c8, max_class_probs_c9, max_class_probs_c10, max_class_probs_c11, max_class_probs_c12, max_class_probs_c13, max_class_probs_c14, max_class_probs_c15))
-        drop_boxplot_data = np.column_stack((drop_max_class_probs_c1, drop_max_class_probs_c2, drop_max_class_probs_c3, drop_max_class_probs_c4, drop_max_class_probs_c5, drop_max_class_probs_c6, drop_max_class_probs_c7, drop_max_class_probs_c8, drop_max_class_probs_c9, drop_max_class_probs_c10, drop_max_class_probs_c11, drop_max_class_probs_c12, drop_max_class_probs_c13, drop_max_class_probs_c14, drop_max_class_probs_c15))
+        boxplot_data = np.column_stack(max_class_probs)
+        drop_boxplot_data = np.column_stack(drop_max_class_probs)
 
         # compute entropy
-        drop_entropy_class_probs_c1 = entropy(torch.mean(drop_class_probs_c1, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c2 = entropy(torch.mean(drop_class_probs_c2, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c3 = entropy(torch.mean(drop_class_probs_c3, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c4 = entropy(torch.mean(drop_class_probs_c4, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c5 = entropy(torch.mean(drop_class_probs_c5, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c6 = entropy(torch.mean(drop_class_probs_c6, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c7 = entropy(torch.mean(drop_class_probs_c7, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c8 = entropy(torch.mean(drop_class_probs_c8, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c9 = entropy(torch.mean(drop_class_probs_c9, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c10 = entropy(torch.mean(drop_class_probs_c10, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c11 = entropy(torch.mean(drop_class_probs_c11, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c12 = entropy(torch.mean(drop_class_probs_c12, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c13 = entropy(torch.mean(drop_class_probs_c13, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c14 = entropy(torch.mean(drop_class_probs_c14, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_c15 = entropy(torch.mean(drop_class_probs_c15, dim=2).detach().cpu().numpy(), axis=1)
-
-        entropy_class_probs_c1 = entropy(class_probs_c1.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c2 = entropy(class_probs_c2.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c3 = entropy(class_probs_c3.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c4 = entropy(class_probs_c4.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c5 = entropy(class_probs_c5.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c6 = entropy(class_probs_c6.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c7 = entropy(class_probs_c7.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c8 = entropy(class_probs_c8.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c9 = entropy(class_probs_c9.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c10 = entropy(class_probs_c10.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c11 = entropy(class_probs_c11.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c12 = entropy(class_probs_c12.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c13 = entropy(class_probs_c13.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c14 = entropy(class_probs_c14.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_c15 = entropy(class_probs_c15.detach().cpu().numpy(), axis=1)
+        drop_entropy_class_probs = [entropy(torch.mean(results_dict['c_{}_l1'.format(cm.__name__)][0], dim=2).detach().cpu().numpy(), axis=1) for cm in corruption_method]
+        drop_entropy_class_probs.extend([entropy(torch.mean(results_dict['c_{}_lNone'.format(cm.__name__)][0], dim=2).detach().cpu().numpy(), axis=1) for cm in corruption_methods_no_severity])
+        entropy_class_probs = [entropy(results_dict['c_{}_l1'.format(cm.__name__)][1].detach().cpu().numpy(), axis=1) for cm in corruption_method]
+        entropy_class_probs.extend([entropy(results_dict['c_{}_lNone'.format(cm.__name__)][1].detach().cpu().numpy(), axis=1) for cm in corruption_methods_no_severity])
 
         # prepare boxplots data
-        entropy_boxplot_data = np.column_stack((entropy_class_probs_c1, entropy_class_probs_c2, entropy_class_probs_c3, entropy_class_probs_c4, entropy_class_probs_c5, entropy_class_probs_c6, entropy_class_probs_c7, entropy_class_probs_c8, entropy_class_probs_c9, entropy_class_probs_c10, entropy_class_probs_c11, entropy_class_probs_c12, entropy_class_probs_c13, entropy_class_probs_c14, entropy_class_probs_c15))
-        drop_entropy_boxplot_data = np.column_stack((drop_entropy_class_probs_c1, drop_entropy_class_probs_c2, drop_entropy_class_probs_c3, drop_entropy_class_probs_c4, drop_entropy_class_probs_c5, drop_entropy_class_probs_c6, drop_entropy_class_probs_c7, drop_entropy_class_probs_c8, drop_entropy_class_probs_c9, drop_entropy_class_probs_c10, drop_entropy_class_probs_c11, drop_entropy_class_probs_c12, drop_entropy_class_probs_c13, drop_entropy_class_probs_c14, drop_entropy_class_probs_c15))
+        entropy_boxplot_data = np.column_stack(entropy_class_probs)
+        drop_entropy_boxplot_data = np.column_stack(drop_entropy_class_probs)
 
         # plot bloxplot
         plot_boxplot_corrupted_digits(boxplot_data, filename='boxplot_corrupted_digits', title='Corrupted MNIST', path=d_samples)
@@ -661,254 +605,93 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
         plot_boxplot_corrupted_digits(entropy_boxplot_data, filename='entropy_boxplot_corrupted_digits', title='Corrupted MNIST', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
         plot_boxplot_corrupted_digits(drop_entropy_boxplot_data, filename='entropy_boxplot_corrupted_digits_MCD', title='Corrupted MNIST - MCD', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
 
-        sys.exit("Done!")
 
     if training_dataset == 'mnist' and eval_rotation:
-        drop_class_probs_180, class_probs_180 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 180 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=180) #TODO add batch_size and drop iters
-        drop_class_probs_150, class_probs_150 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 150 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=150) #TODO add batch_size and drop iters
-        drop_class_probs_120, class_probs_120 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 120 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=120) #TODO add batch_size and drop iters
-        drop_class_probs_90, class_probs_90 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 90 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=90) #TODO add batch_size and drop iters
-        drop_class_probs_60, class_probs_60 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 60 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=60) #TODO add batch_size and drop iters
-        drop_class_probs_30, class_probs_30 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 30 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=30) #TODO add batch_size and drop iters
-        drop_class_probs_0, class_probs_0 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 0 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=0) #TODO add batch_size and drop iters
-        drop_class_probs_330, class_probs_330 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 330 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=330) #TODO add batch_size and drop iters
-        drop_class_probs_300, class_probs_300 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 300 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=300) #TODO add batch_size and drop iters
-        drop_class_probs_270, class_probs_270 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 270 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=270) #TODO add batch_size and drop iters
-        drop_class_probs_240, class_probs_240 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 240 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=240) #TODO add batch_size and drop iters
-        drop_class_probs_210, class_probs_210 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 210 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=210) #TODO add batch_size and drop iters
-        #
-
-        np.save(d_results + 'dropout_class_probs_180', drop_class_probs_180.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_150', drop_class_probs_150.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_120', drop_class_probs_120.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_90', drop_class_probs_90.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_60', drop_class_probs_60.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_30', drop_class_probs_30.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_0', drop_class_probs_0.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_330', drop_class_probs_330.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_300', drop_class_probs_300.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_270', drop_class_probs_270.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_240', drop_class_probs_240.cpu().detach().numpy())
-        np.save(d_results + 'dropout_class_probs_210', drop_class_probs_210.cpu().detach().numpy())
-
-        np.save(d_results + 'class_probs_180', class_probs_180.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_150', class_probs_150.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_120', class_probs_120.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_90', class_probs_90.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_60', class_probs_60.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_30', class_probs_30.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_0', class_probs_0.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_330', class_probs_330.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_300', class_probs_300.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_270', class_probs_270.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_240', class_probs_240.cpu().detach().numpy())
-        np.save(d_results + 'class_probs_210', class_probs_210.cpu().detach().numpy())
-
-        drop_max_class_probs_180 = torch.max(torch.mean(drop_class_probs_180, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_150 = torch.max(torch.mean(drop_class_probs_150, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_120 = torch.max(torch.mean(drop_class_probs_120, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_90 = torch.max(torch.mean(drop_class_probs_90, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_60 = torch.max(torch.mean(drop_class_probs_60, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_30 = torch.max(torch.mean(drop_class_probs_30, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_0 = torch.max(torch.mean(drop_class_probs_0, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_330 = torch.max(torch.mean(drop_class_probs_330, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_300 = torch.max(torch.mean(drop_class_probs_300, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_270 = torch.max(torch.mean(drop_class_probs_270, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_240 = torch.max(torch.mean(drop_class_probs_240, dim=2), dim=1)[0].detach().cpu().numpy()
-        drop_max_class_probs_210 = torch.max(torch.mean(drop_class_probs_210, dim=2), dim=1)[0].detach().cpu().numpy()
-
-        max_class_probs_180 = torch.max(class_probs_180, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_150 = torch.max(class_probs_150, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_120 = torch.max(class_probs_120, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_90 = torch.max(class_probs_90, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_60 = torch.max(class_probs_60, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_30 = torch.max(class_probs_30, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_0 = torch.max(class_probs_0, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_330 = torch.max(class_probs_330, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_300 = torch.max(class_probs_300, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_270 = torch.max(class_probs_270, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_240 = torch.max(class_probs_240, dim=1)[0].detach().cpu().numpy()
-        max_class_probs_210 = torch.max(class_probs_210, dim=1)[0].detach().cpu().numpy()
-
-        boxplot_data = np.column_stack((max_class_probs_180, max_class_probs_150, max_class_probs_120, max_class_probs_90, max_class_probs_60, max_class_probs_30, max_class_probs_0, max_class_probs_330, max_class_probs_300, max_class_probs_270, max_class_probs_240, max_class_probs_210))
-        drop_boxplot_data = np.column_stack((drop_max_class_probs_180, drop_max_class_probs_150, drop_max_class_probs_120, drop_max_class_probs_90, drop_max_class_probs_60, drop_max_class_probs_30, drop_max_class_probs_0, drop_max_class_probs_330, drop_max_class_probs_300, drop_max_class_probs_270, drop_max_class_probs_240, drop_max_class_probs_210))
-
-        # plot classification entropy
-        drop_entropy_class_probs_180 = entropy(torch.mean(drop_class_probs_180, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_150 = entropy(torch.mean(drop_class_probs_150, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_120 = entropy(torch.mean(drop_class_probs_120, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_90 = entropy(torch.mean(drop_class_probs_90, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_60 = entropy(torch.mean(drop_class_probs_60, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_30 = entropy(torch.mean(drop_class_probs_30, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_0 = entropy(torch.mean(drop_class_probs_0, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_330 = entropy(torch.mean(drop_class_probs_330, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_300 = entropy(torch.mean(drop_class_probs_300, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_270 = entropy(torch.mean(drop_class_probs_270, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_240 = entropy(torch.mean(drop_class_probs_240, dim=2).detach().cpu().numpy(), axis=1)
-        drop_entropy_class_probs_210 = entropy(torch.mean(drop_class_probs_210, dim=2).detach().cpu().numpy(), axis=1)
-
-        entropy_class_probs_180 = entropy(class_probs_180.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_150 = entropy(class_probs_150.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_120 = entropy(class_probs_120.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_90 = entropy(class_probs_90.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_60 = entropy(class_probs_60.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_30 = entropy(class_probs_30.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_0 = entropy(class_probs_0.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_330 = entropy(class_probs_330.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_300 = entropy(class_probs_300.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_270 = entropy(class_probs_270.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_240 = entropy(class_probs_240.detach().cpu().numpy(), axis=1)
-        entropy_class_probs_210 = entropy(class_probs_210.detach().cpu().numpy(), axis=1)
-
-        entropy_boxplot_data = np.column_stack((entropy_class_probs_180, entropy_class_probs_150, entropy_class_probs_120, entropy_class_probs_90, entropy_class_probs_60, entropy_class_probs_30, entropy_class_probs_0, entropy_class_probs_330, entropy_class_probs_300, entropy_class_probs_270, entropy_class_probs_240, entropy_class_probs_210))
-        drop_entropy_boxplot_data = np.column_stack((drop_entropy_class_probs_180, drop_entropy_class_probs_150, drop_entropy_class_probs_120, drop_entropy_class_probs_90, drop_entropy_class_probs_60, drop_entropy_class_probs_30, drop_entropy_class_probs_0, drop_entropy_class_probs_330, drop_entropy_class_probs_300, drop_entropy_class_probs_270, drop_entropy_class_probs_240, drop_entropy_class_probs_210))
-
-        plot_boxplot_rotating_digits(entropy_boxplot_data, filename='entropy_boxplot_rotating_digits', title='Rotating MNIST', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
-        plot_boxplot_rotating_digits(drop_entropy_boxplot_data, filename='entropy_boxplot_rotating_digits_MCD', title='Rotating MNIST - MCD', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
-
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=50) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=60) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=70) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=80) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=90) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=120) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=140) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=150) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=160) #TODO add batch_size and drop iters
-    # evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one", dropout_inference=dropout_inference, output_dir=d, degrees=180) #TODO add batch_size and drop iters
+        degrees = [180, 150, 120, 90, 60, 30, 0, 330, 300, 270, 240, 210]
+        for deg in degrees:
+            print("Rotation degrees {}".format(deg))
+            results_dict['rotation_{}'.format(deg)] = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated digit {} degrees".format(deg), dropout_inference=dropout_inference,
+                                                                                    n_dropout_iters=n_mcd_passes, output_dir=d, degrees=deg)
+            np.save(d_results + 'dropout_class_probs_{}'.format(deg), results_dict['rotation_{}'.format(deg)][0].cpu().detach().numpy())
+            np.save(d_results + 'class_probs_{}'.format(deg), results_dict['rotation_{}'.format(deg)][1].cpu().detach().numpy())
 
 
-        print("Train class entropy: {} Test class entropy: {}".format(entropy(class_probs_train, axis=1).sum(), entropy(class_probs_test, axis=1).sum()))
+        drop_max_class_probs = [torch.max(torch.mean(results_dict['rotation_{}'.format(deg)][0], dim=2), dim=1)[0].cpu().detach().numpy() for deg in degrees]
+        max_class_probs = [torch.max(results_dict['rotation_{}'.format(deg)][1], dim=1)[0].cpu().detach().numpy() for deg in degrees]
+
+        boxplot_data = np.column_stack(max_class_probs)
+        drop_boxplot_data = np.column_stack(drop_max_class_probs)
 
         plot_boxplot_rotating_digits(boxplot_data, filename='boxplot_rotating_digits', title='Rotating MNIST', path=d_samples)
         plot_boxplot_rotating_digits(drop_boxplot_data, filename='boxplot_rotating_digits_MCD', title='Rotating MNIST - MCD', path=d_samples)
 
+        # plot classification entropy
+        drop_entropy_class_probs = [entropy(torch.mean(results_dict['rotation_{}'.format(deg)][0], dim=2).detach().cpu().numpy(), axis=1) for deg in degrees]
+        entropy_class_probs = [entropy(results_dict['rotation_{}'.format(deg)][1].detach().cpu().numpy(), axis=1) for deg in degrees]
 
-    if training_dataset == 'mnist' and eval_rotation:
-        if eval_single_digit:
+        entropy_boxplot_data = np.column_stack(entropy_class_probs)
+        drop_entropy_boxplot_data = np.column_stack(drop_entropy_class_probs)
 
-            for class_idx in range(10):
-                print("Evaluate by rotating digits, for each class separately: class {}".format(class_idx))
+        plot_boxplot_rotating_digits(entropy_boxplot_data, filename='entropy_boxplot_rotating_digits', title='Rotating MNIST', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
+        plot_boxplot_rotating_digits(drop_entropy_boxplot_data, filename='entropy_boxplot_rotating_digits_MCD', title='Rotating MNIST - MCD', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
 
-                drop_class_probs_180, class_probs_180 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 180 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=180, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_150, class_probs_150 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 150 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=150, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_120, class_probs_120 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 120 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=120, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_90, class_probs_90 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 90 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=90, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_60, class_probs_60 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 60 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=60, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_30, class_probs_30 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 30 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=30, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_0, class_probs_0 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 0 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=0, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_330, class_probs_330 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 330 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=330, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_300, class_probs_300 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 300 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=300, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_270, class_probs_270 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 270 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=270, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_240, class_probs_240 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 240 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=240, class_label=class_idx) #TODO add batch_size and drop iters
-                drop_class_probs_210, class_probs_210 = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated one 210 degrees", dropout_inference=dropout_inference, output_dir=d, degrees=210, class_label=class_idx) #TODO add batch_size and drop iters
 
-                np.save(d_results + 'dropout_class_probs_180_' + str(class_idx), drop_class_probs_180.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_150_' + str(class_idx), drop_class_probs_150.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_120_' + str(class_idx), drop_class_probs_120.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_90_' + str(class_idx), drop_class_probs_90.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_60.out_' + str(class_idx), drop_class_probs_60.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_30.out_' + str(class_idx), drop_class_probs_30.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_0.out_' + str(class_idx), drop_class_probs_0.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_330.out_' + str(class_idx), drop_class_probs_330.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_300.out_' + str(class_idx), drop_class_probs_300.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_270.out_' + str(class_idx), drop_class_probs_270.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_240.out_' + str(class_idx), drop_class_probs_240.cpu().detach().numpy())
-                np.save(d_results + 'dropout_class_probs_210.out_' + str(class_idx), drop_class_probs_210.cpu().detach().numpy())
 
-                np.save(d_results + 'class_probs_180_' + str(class_idx), class_probs_180.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_150_' + str(class_idx), class_probs_150.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_120_' + str(class_idx), class_probs_120.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_90_' + str(class_idx), class_probs_90.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_60_' + str(class_idx), class_probs_60.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_30_' + str(class_idx), class_probs_30.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_0_' + str(class_idx), class_probs_0.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_330_' + str(class_idx), class_probs_330.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_300_' + str(class_idx), class_probs_300.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_270_' + str(class_idx), class_probs_270.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_240_' + str(class_idx), class_probs_240.cpu().detach().numpy())
-                np.save(d_results + 'class_probs_210_' + str(class_idx), class_probs_210.cpu().detach().numpy())
+    if training_dataset == 'mnist' and eval_rotation and eval_single_digit:
+        degrees = [180, 150, 120, 90, 60, 30, 0, 330, 300, 270, 240, 210]
 
-                drop_max_class_probs_180 = torch.max(torch.mean(drop_class_probs_180, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_150 = torch.max(torch.mean(drop_class_probs_150, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_120 = torch.max(torch.mean(drop_class_probs_120, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_90 = torch.max(torch.mean(drop_class_probs_90, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_60 = torch.max(torch.mean(drop_class_probs_60, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_30 = torch.max(torch.mean(drop_class_probs_30, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_0 = torch.max(torch.mean(drop_class_probs_0, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_330 = torch.max(torch.mean(drop_class_probs_330, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_300 = torch.max(torch.mean(drop_class_probs_300, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_270 = torch.max(torch.mean(drop_class_probs_270, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_240 = torch.max(torch.mean(drop_class_probs_240, dim=2), dim=1)[0].detach().cpu().numpy()
-                drop_max_class_probs_210 = torch.max(torch.mean(drop_class_probs_210, dim=2), dim=1)[0].detach().cpu().numpy()
+        for class_idx in range(10):
+            results_dict = {}
+            print("Evaluate by rotating digits, for each class separately: class {}".format(class_idx))
+            for deg in degrees:
+                print("Rotation degrees {}".format(deg))
+                results_dict['digit_{}_rotation_{}'.format(class_idx, deg)] = evaluate_model_rotated_digits(model, device, test_loader, "Test DROP rotated digit {} degrees".format(deg), dropout_inference=dropout_inference,
+                                                                                        n_dropout_iters=n_mcd_passes, output_dir=d, degrees=deg, class_label=class_idx)
+                np.save(d_results + 'dropout_class_probs_{}_{}'.format(deg, class_idx), results_dict['digit_{}_rotation_{}'.format(class_idx, deg)][0].cpu().detach().numpy())
+                np.save(d_results + 'class_probs_{}_{}'.format(deg, class_idx), results_dict['digit_{}_rotation_{}'.format(class_idx, deg)][1].cpu().detach().numpy())
 
-                max_class_probs_180 = torch.max(class_probs_180, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_150 = torch.max(class_probs_150, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_120 = torch.max(class_probs_120, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_90 = torch.max(class_probs_90, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_60 = torch.max(class_probs_60, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_30 = torch.max(class_probs_30, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_0 = torch.max(class_probs_0, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_330 = torch.max(class_probs_330, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_300 = torch.max(class_probs_300, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_270 = torch.max(class_probs_270, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_240 = torch.max(class_probs_240, dim=1)[0].detach().cpu().numpy()
-                max_class_probs_210 = torch.max(class_probs_210, dim=1)[0].detach().cpu().numpy()
 
-                boxplot_data = np.column_stack((max_class_probs_180, max_class_probs_150, max_class_probs_120, max_class_probs_90, max_class_probs_60, max_class_probs_30, max_class_probs_0, max_class_probs_330, max_class_probs_300, max_class_probs_270, max_class_probs_240, max_class_probs_210))
-                drop_boxplot_data = np.column_stack((drop_max_class_probs_180, drop_max_class_probs_150, drop_max_class_probs_120, drop_max_class_probs_90, drop_max_class_probs_60, drop_max_class_probs_30, drop_max_class_probs_0, drop_max_class_probs_330, drop_max_class_probs_300, drop_max_class_probs_270, drop_max_class_probs_240, drop_max_class_probs_210))
+            drop_max_class_probs = [torch.max(torch.mean(results_dict['digit_{}_rotation_{}'.format(class_idx, deg)][0], dim=2), dim=1)[0].cpu().detach().numpy() for deg in degrees]
+            max_class_probs = [torch.max(results_dict['digit_{}_rotation_{}'.format(class_idx, deg)][1], dim=1)[0].cpu().detach().numpy() for deg in degrees]
 
-                # plot classification entropy
-                drop_entropy_class_probs_180 = entropy(torch.mean(drop_class_probs_180, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_150 = entropy(torch.mean(drop_class_probs_150, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_120 = entropy(torch.mean(drop_class_probs_120, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_90 = entropy(torch.mean(drop_class_probs_90, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_60 = entropy(torch.mean(drop_class_probs_60, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_30 = entropy(torch.mean(drop_class_probs_30, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_0 = entropy(torch.mean(drop_class_probs_0, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_330 = entropy(torch.mean(drop_class_probs_330, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_300 = entropy(torch.mean(drop_class_probs_300, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_270 = entropy(torch.mean(drop_class_probs_270, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_240 = entropy(torch.mean(drop_class_probs_240, dim=2).detach().cpu().numpy(), axis=1)
-                drop_entropy_class_probs_210 = entropy(torch.mean(drop_class_probs_210, dim=2).detach().cpu().numpy(), axis=1)
+            boxplot_data = np.column_stack(max_class_probs)
+            drop_boxplot_data = np.column_stack(drop_max_class_probs)
 
-                entropy_class_probs_180 = entropy(class_probs_180.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_150 = entropy(class_probs_150.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_120 = entropy(class_probs_120.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_90 = entropy(class_probs_90.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_60 = entropy(class_probs_60.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_30 = entropy(class_probs_30.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_0 = entropy(class_probs_0.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_330 = entropy(class_probs_330.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_300 = entropy(class_probs_300.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_270 = entropy(class_probs_270.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_240 = entropy(class_probs_240.detach().cpu().numpy(), axis=1)
-                entropy_class_probs_210 = entropy(class_probs_210.detach().cpu().numpy(), axis=1)
+            plot_boxplot_rotating_digits(boxplot_data, filename='boxplot_rotating_digits_' + str(class_idx), title='Rotating MNIST', path=d_samples)
+            plot_boxplot_rotating_digits(drop_boxplot_data, filename='boxplot_rotating_digits_MCD_' + str(class_idx), title='Rotating MNIST - MCD', path=d_samples)
 
-                entropy_boxplot_data = np.column_stack((entropy_class_probs_180, entropy_class_probs_150, entropy_class_probs_120, entropy_class_probs_90, entropy_class_probs_60, entropy_class_probs_30, entropy_class_probs_0, entropy_class_probs_330, entropy_class_probs_300, entropy_class_probs_270, entropy_class_probs_240, entropy_class_probs_210))
-                drop_entropy_boxplot_data = np.column_stack((drop_entropy_class_probs_180, drop_entropy_class_probs_150, drop_entropy_class_probs_120, drop_entropy_class_probs_90, drop_entropy_class_probs_60, drop_entropy_class_probs_30, drop_entropy_class_probs_0, drop_entropy_class_probs_330, drop_entropy_class_probs_300, drop_entropy_class_probs_270, drop_entropy_class_probs_240, drop_entropy_class_probs_210))
+            # plot classification entropy
+            drop_entropy_class_probs = [entropy(torch.mean(results_dict['digit_{}_rotation_{}'.format(deg)][0], dim=2).detach().cpu().numpy(), axis=1) for deg in degrees]
+            entropy_class_probs = [entropy(results_dict['digit_{}_rotation_{}'.format(deg)][1].detach().cpu().numpy(), axis=1) for deg in degrees]
 
-                plot_boxplot_rotating_digits(entropy_boxplot_data, filename='entropy_boxplot_rotating_digits_' + str(class_idx), title='Rotating MNIST', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
-                plot_boxplot_rotating_digits(drop_entropy_boxplot_data, filename='entropy_boxplot_rotating_digits_MCD_' + str(class_idx), title='Rotating MNIST - MCD', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
+            entropy_boxplot_data = np.column_stack(entropy_class_probs)
+            drop_entropy_boxplot_data = np.column_stack(drop_entropy_class_probs)
 
-                plot_boxplot_rotating_digits(boxplot_data, filename='boxplot_rotating_digits_' + str(class_idx), title='Rotating MNIST', path=d_samples)
-                plot_boxplot_rotating_digits(drop_boxplot_data, filename='boxplot_rotating_digits_MCD_' + str(class_idx), title='Rotating MNIST - MCD', path=d_samples)
-
+            plot_boxplot_rotating_digits(entropy_boxplot_data, filename='entropy_boxplot_rotating_digits_' + str(class_idx), title='Rotating MNIST', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
+            plot_boxplot_rotating_digits(drop_entropy_boxplot_data, filename='entropy_boxplot_rotating_digits_MCD_' + str(class_idx), title='Rotating MNIST - MCD', path=d_samples, ylimits=[-0.1, 3.0], ylabel='Classification Entropy')
 
 
     other_mnist_train_lls, other_mnist_test_lls, other_class_probs_train, other_class_probs_test, other_mnist_train_lls_sup, other_mnist_train_lls_unsup, other_mnist_test_lls_sup, other_mnist_test_lls_unsup = get_other_lls(model, device, d, use_cuda, batch_size, training_dataset=training_dataset)
     print("OTHER Train class entropy: {} OTHER Test class entropy: {}".format(entropy(other_class_probs_train, axis=1).sum(), entropy(other_class_probs_test, axis=1).sum()))
 
-    lls_dict = {"mnist_train":train_lls, "mnist_test":test_lls, "other_mnist_train":other_mnist_train_lls, "other_mnist_test":other_mnist_test_lls}
-    head_lls_dict_sup = {"mnist_train":train_lls_sup, "mnist_test":test_lls_sup, "other_mnist_train":other_mnist_train_lls_sup, "other_mnist_test":other_mnist_test_lls_sup}
-    head_lls_dict_unsup = {"mnist_train":train_lls_unsup, "mnist_test":test_lls_unsup, "other_mnist_train":other_mnist_train_lls_unsup, "other_mnist_test":other_mnist_test_lls_unsup}
-    class_probs_dict = {"mnist_train":class_probs_train.max(axis=1), "mnist_test":class_probs_test.max(axis=1), "other_mnist_train":other_class_probs_train.max(axis=1), "other_mnist_test":other_class_probs_test.max(axis=1)}
-
+    lls_dict = {"train_lls":train_lls, "test_lls":test_lls, "other_mnist_train_lls":other_mnist_train_lls, "other_mnist_test_lls":other_mnist_test_lls}
+    head_lls_dict_sup = {"train_lls_sup":train_lls_sup, "test_lls_sup":test_lls_sup, "other_mnist_train_lls_sup":other_mnist_train_lls_sup, "other_mnist_test_lls_sup":other_mnist_test_lls_sup}
+    head_lls_dict_unsup = {"train_lls_unsup":train_lls_unsup, "test_lls_unsup":test_lls_unsup, "other_mnist_train_unsup":other_mnist_train_lls_unsup, "other_mnist_test_unsup":other_mnist_test_lls_unsup}
+    class_probs_dict = {"class_probs_train":class_probs_train.max(axis=1), "class_probs_test":class_probs_test.max(axis=1), "other_class_probs_train":other_class_probs_train.max(axis=1), "other_class_probs_test":other_class_probs_test.max(axis=1)}
 
     np.save(d_results + 'class_probs_in_domain_train', class_probs_train)
     np.save(d_results + 'class_probs_in_domain_test', class_probs_test)
     np.save(d_results + 'class_probs_ood_train', other_class_probs_train)
     np.save(d_results + 'class_probs_ood_test', other_class_probs_test)
+
+    d_likelihoods = d_results + "likelihoods/"
+
+    for k, v in lls_dict.items():
+        np.save(d_likelihoods + k, v)
+    for k, v in head_lls_dict_sup.items():
+        np.save(d_likelihoods + k, v)
+    for k, v in head_lls_dict_unsup.items():
+        np.save(d_likelihoods + k, v)
 
     plot_histograms(lls_dict, filename='histograms_lls', title="Data LLs", path=d_samples, trained_on_fmnist=training_dataset)
     plot_histograms(head_lls_dict_sup, filename='histograms_lls_sup', title="Data SUP LLs", path=d_samples, trained_on_fmnist=training_dataset)
@@ -924,20 +707,29 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP", dropout_inference=dropout_inference, output_dir=d)
     print("DROP OTHER Train class entropy: {} DROP OTHER Test class entropy: {}".format(entropy(other_class_probs_train_dropout.mean(axis=2), axis=1).sum(), entropy(other_class_probs_test_dropout.mean(axis=2), axis=1).sum()))
 
-    dropout_lls_dict = {"mnist_train":train_lls_dropout, "mnist_test":test_lls_dropout, "other_mnist_train":other_train_lls_dropout, "other_mnist_test":other_test_lls_dropout}
-    dropout_head_lls_dict_sup = {"mnist_train":train_lls_sup_drop, "mnist_test":test_lls_sup_drop, "other_mnist_train":other_train_lls_sup_drop, "other_mnist_test":other_test_lls_sup_drop}
-    dropout_head_lls_dict_unsup = {"mnist_train":train_lls_unsup_drop, "mnist_test":test_lls_unsup_drop, "other_mnist_train":other_train_lls_unsup_drop, "other_mnist_test":other_test_lls_unsup_drop}
-    dropout_class_probs_dict = {"mnist_train":class_probs_train_dropout.mean(axis=2).max(axis=1), "mnist_test":class_probs_test_dropout.mean(axis=2).max(axis=1), "other_mnist_train":other_class_probs_train_dropout.mean(axis=2).max(axis=1), "other_mnist_test":other_class_probs_test_dropout.mean(axis=2).max(axis=1)}
-
     np.save(d_results + 'class_probs_in_domain_train_dropout', class_probs_train_dropout)
     np.save(d_results + 'class_probs_in_domain_test_dropout', class_probs_test_dropout)
     np.save(d_results + 'class_probs_ood_train_dropout', other_class_probs_train_dropout)
     np.save(d_results + 'class_probs_ood_test_dropout', other_class_probs_test_dropout)
 
+    dropout_lls_dict = {"drop_train_lls":train_lls_dropout, "drop_test_lls":test_lls_dropout, "drop_other_mnist_train_lls":other_train_lls_dropout, "drop_other_mnist_test_lls":other_test_lls_dropout}
+    dropout_head_lls_dict_sup = {"drop_train_lls_sup":train_lls_sup_drop, "drop_test_lls_sup":test_lls_sup_drop, "drop_other_mnist_train_lls_sup":other_train_lls_sup_drop, "drop_other_mnist_test_lls_sup":other_test_lls_sup_drop}
+    dropout_head_lls_dict_unsup = {"drop_train_lls_unsup":train_lls_unsup_drop, "drop_test_lls_unsup":test_lls_unsup_drop, "drop_other_mnist_train_lls_unsup":other_train_lls_unsup_drop, "drop_other_mnist_test_lls_unsup":other_test_lls_unsup_drop}
+    dropout_class_probs_dict = {"drop_class_probs_train":class_probs_train_dropout.mean(axis=2).max(axis=1), "drop_class_probs_test":class_probs_test_dropout.mean(axis=2).max(axis=1),
+                                "other_drop_class_probs_train":other_class_probs_train_dropout.mean(axis=2).max(axis=1), "other_drop_class_probs_test":other_class_probs_test_dropout.mean(axis=2).max(axis=1)}
+
+    for k, v in dropout_lls_dict.items():
+        np.save(d_likelihoods + k, v)
+    for k, v in dropout_head_lls_dict_sup.items():
+        np.save(d_likelihoods + k, v)
+    for k, v in dropout_head_lls_dict_unsup.items():
+        np.save(d_likelihoods + k, v)
+
     plot_histograms(dropout_lls_dict, filename='dropout_histograms_lls', title="DROPOUT Data LLs", path=d_samples, trained_on_fmnist=training_dataset)
     plot_histograms(dropout_head_lls_dict_sup, filename='dropout_histograms_lls_sup', title="DROPOUT Data SUP LLs", path=d_samples, trained_on_fmnist=training_dataset)
     plot_histograms(dropout_head_lls_dict_unsup, filename='dropout_histograms_lls_unsup', title="DROPOUT Data UNSUP LLs", path=d_samples, trained_on_fmnist=training_dataset)
     plot_histograms(dropout_class_probs_dict, filename='dropout_class_probs_histograms', title="DROPOUT Class Probs", path=d_samples, trained_on_fmnist=training_dataset, y_lim=30000)
+
 
 def get_other_lls(model, device, output_dir='./', use_cuda=False, batch_size=100, training_dataset='mnist'):
     train_loader, test_loader = get_data_loaders(use_cuda=use_cuda, device=device, batch_size=batch_size, dataset=get_other_dataset_name(training_dataset))
