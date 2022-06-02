@@ -423,12 +423,14 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
     n_features = get_data_flatten_shape(train_loader)[1]
 
+
     if toy_setting:
         rat_S, rat_I, rat_D, rat_R = 2, 4, 2, 1
-    elif training_dataset == 'cifar' or 'svhn':
+    elif training_dataset == 'cifar' or training_dataset == 'svhn':
         rat_S, rat_I, rat_D, rat_R = 30, 30, 5, 10
     else:
         rat_S, rat_I, rat_D, rat_R = 20, 20, 5, 5
+
 
     model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_spn, F=n_features)
     model.train()
