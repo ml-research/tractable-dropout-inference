@@ -17,7 +17,7 @@ from spn.experiments.RandomSPNs_layerwise.rat_spn import RatSpn, RatSpnConfig
 import matplotlib.pyplot as plt
 import matplotlib
 
-from torch.utils.data import or 'svhn' Dataset, ConcatDataset
+from torch.utils.data import Dataset, ConcatDataset
 from PIL import Image
 import datetime
 
@@ -289,7 +289,7 @@ def get_data_loaders(use_cuda, device, batch_size, dataset='mnist'):
 
 def get_data_flatten_shape(data_loader):
     if isinstance(data_loader.dataset, ConcatDataset):
-        return (data_loader.dataset.cummulative_sizes[-1],
+        return (data_loader.dataset.cumulative_sizes[-1],
                 torch.prod(torch.tensor(data_loader.dataset.datasets[0].data.shape[1:])).int().item())
     return (data_loader.dataset.data.shape[0],
             torch.prod(torch.tensor(data_loader.dataset.data.shape[1:])).int().item())
@@ -336,7 +336,7 @@ def get_other_dataset_name(training_dataset):
         return 'cifar'
 
 
-def load_torch(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=512, rat_S=20, rat_I=20, rat_D=5, rat_R=5):
+def load_torch(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512, rat_S=20, rat_I=20, rat_D=5, rat_R=5):
     from torch import optim
     from torch import nn
 
@@ -368,12 +368,17 @@ def load_torch(model_dir=None, training_dataset=None, dropout_inference=None, ba
     for k, v in head_lls_dict_unsup.items():
         np.save(d + k, v)
 
-    train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, output_dir=d)
-    test_lls_dropout, class_probs_test_dropout, test_lls_sup_drop, test_lls_unsup_drop = evaluate_model_dropout(model, device, test_loader, "Test DROP", dropout_inference=dropout_inference, output_dir=d)
+    train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop, train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+    test_lls_dropout, class_probs_test_dropout, test_lls_sup_drop, test_lls_unsup_drop, test_lls_dropout_heads = evaluate_model_dropout(model, device, test_loader, "Test DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
 
     other_train_loader, other_test_loader = get_data_loaders(use_cuda=use_cuda, device=device, batch_size=batch_size, dataset=get_other_dataset_name(training_dataset))
-    other_train_lls_dropout, other_class_probs_train_dropout, other_train_lls_sup_drop, other_train_lls_unsup_drop = evaluate_model_dropout(model, device, other_train_loader, "Other Train DROP", dropout_inference=dropout_inference, output_dir=d)
-    other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP", dropout_inference=dropout_inference, output_dir=d)
+    other_train_lls_dropout, other_class_probs_train_dropout, other_train_lls_sup_drop, other_train_lls_unsup_drop, other_train_lls_dropout_heads = evaluate_model_dropout(model, device, other_train_loader, "Other Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+    other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop, other_test_lls_dropout_heads = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+
+    np.save(d + 'train_lls_dropout_heads', train_lls_dropout_heads)
+    np.save(d + 'test_lls_dropout_heads', test_lls_dropout_heads)
+    np.save(d + 'other_train_lls_dropout_heads', other_train_lls_dropout_heads)
+    np.save(d + 'other_test_lls_dropout_heads', other_test_lls_dropout_heads)
 
     dropout_lls_dict = {"drop_train_lls":train_lls_dropout, "drop_test_lls":test_lls_dropout, "drop_other_mnist_train_lls":other_train_lls_dropout, "drop_other_mnist_test_lls":other_test_lls_dropout}
     dropout_head_lls_dict_sup = {"drop_train_lls_sup":train_lls_sup_drop, "drop_test_lls_sup":test_lls_sup_drop, "drop_other_mnist_train_lls_sup":other_train_lls_sup_drop, "drop_other_mnist_test_lls_sup":other_test_lls_sup_drop}
@@ -448,12 +453,12 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
     with open(d + 'trainig_details.out', 'a') as writer:
         writer.write("Dataset: {}, N features {}".format(training_dataset, n_features))
-        writer.write("n epochs: {}, batch size: {}".format(n_epochs, batch_size))
-        writer.write("MC dropout p {}, dropout (learning) {}".format(dropout_inference, dropout_spn))
-        writer.write("RAT lambda {}".format(lmbda))
-        writer.write("RAT hyperparameters S {} I {} D {} R {}".format(S, I, D, R))
-        writer.write("RAT n of model params: {}".format(n_rat_params))
-        writer.write("N MCD passes: {}".format(n_mcd_passes))
+        writer.write("\nn epochs: {}, batch size: {}".format(n_epochs, batch_size))
+        writer.write("\nMC dropout p {}, dropout (learning) {}".format(dropout_inference, dropout_spn))
+        writer.write("\nRAT lambda {}".format(lmbda))
+        writer.write("\nRAT hyperparameters S {} I {} D {} R {}".format(rat_S, rat_I, rat_D, rat_R))
+        writer.write("\nRAT n of model params: {}".format(n_rat_params))
+        writer.write("\nN MCD passes: {}".format(n_mcd_passes))
 
     for epoch in range(n_epochs):
         t_start = time.time()
@@ -568,8 +573,11 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
         corruption_methods_no_severity = [corruptions.stripe, corruptions.dotted_line, corruptions.zigzag, corruptions.canny_edges]
 
         results_dict = {}
+        corruption_methods_full = []
+        corruption_methods_full.extend(corruption_method)
+        corruption_methods_full.extend(corruption_methods_no_severity)
 
-        for cm in corruption_method.extend(corruption_methods_no_severity):
+        for cm in corruption_methods_full:
             if cm in corruption_methods_no_severity: severity = [None]
             for sl in severity:
                 print("Corruption {}, Severity {}".format(cm.__name__, sl))
@@ -607,6 +615,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
 
     if training_dataset == 'mnist' and eval_rotation:
+        results_dict = {}
         degrees = [180, 150, 120, 90, 60, 30, 0, 330, 300, 270, 240, 210]
         for deg in degrees:
             print("Rotation degrees {}".format(deg))
@@ -674,9 +683,9 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     other_mnist_train_lls, other_mnist_test_lls, other_class_probs_train, other_class_probs_test, other_mnist_train_lls_sup, other_mnist_train_lls_unsup, other_mnist_test_lls_sup, other_mnist_test_lls_unsup = get_other_lls(model, device, d, use_cuda, batch_size, training_dataset=training_dataset)
     print("OTHER Train class entropy: {} OTHER Test class entropy: {}".format(entropy(other_class_probs_train, axis=1).sum(), entropy(other_class_probs_test, axis=1).sum()))
 
-    lls_dict = {"train_lls":train_lls, "test_lls":test_lls, "other_mnist_train_lls":other_mnist_train_lls, "other_mnist_test_lls":other_mnist_test_lls}
-    head_lls_dict_sup = {"train_lls_sup":train_lls_sup, "test_lls_sup":test_lls_sup, "other_mnist_train_lls_sup":other_mnist_train_lls_sup, "other_mnist_test_lls_sup":other_mnist_test_lls_sup}
-    head_lls_dict_unsup = {"train_lls_unsup":train_lls_unsup, "test_lls_unsup":test_lls_unsup, "other_mnist_train_unsup":other_mnist_train_lls_unsup, "other_mnist_test_unsup":other_mnist_test_lls_unsup}
+    lls_dict = {"train_lls":train_lls, "test_lls":test_lls, "other_train_lls":other_mnist_train_lls, "other_test_lls":other_mnist_test_lls}
+    head_lls_dict_sup = {"train_lls_sup":train_lls_sup, "test_lls_sup":test_lls_sup, "other_train_lls_sup":other_mnist_train_lls_sup, "other_test_lls_sup":other_mnist_test_lls_sup}
+    head_lls_dict_unsup = {"train_lls_unsup":train_lls_unsup, "test_lls_unsup":test_lls_unsup, "other_train_unsup":other_mnist_train_lls_unsup, "other_test_unsup":other_mnist_test_lls_unsup}
     class_probs_dict = {"class_probs_train":class_probs_train.max(axis=1), "class_probs_test":class_probs_test.max(axis=1), "other_class_probs_train":other_class_probs_train.max(axis=1), "other_class_probs_test":other_class_probs_test.max(axis=1)}
 
     np.save(d_results + 'class_probs_in_domain_train', class_probs_train)
@@ -685,6 +694,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     np.save(d_results + 'class_probs_ood_test', other_class_probs_test)
 
     d_likelihoods = d_results + "likelihoods/"
+    ensure_dir(d_likelihoods)
 
     for k, v in lls_dict.items():
         np.save(d_likelihoods + k, v)
@@ -698,13 +708,17 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     plot_histograms(head_lls_dict_unsup, filename='histograms_lls_unsup', title="Data UNSUP LLs", path=d_samples, trained_on_fmnist=training_dataset)
     plot_histograms(class_probs_dict, filename='class_probs_histograms', title="Class Probs", path=d_samples, trained_on_fmnist=training_dataset, y_lim=30000)
 
-    train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, output_dir=d)
-    test_lls_dropout, class_probs_test_dropout, test_lls_sup_drop, test_lls_unsup_drop = evaluate_model_dropout(model, device, test_loader, "Test DROP", dropout_inference=dropout_inference, output_dir=d)
+    train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop, train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP",
+                                                                                                                    dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+    test_lls_dropout, class_probs_test_dropout, test_lls_sup_drop, test_lls_unsup_drop, test_lls_dropout_heads = evaluate_model_dropout(model, device, test_loader, "Test DROP",
+                                                                                                                dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
     print("DROP Train class entropy: {} DROP Test class entropy: {}".format(entropy(class_probs_train_dropout.mean(axis=2), axis=1).sum(), entropy(class_probs_test_dropout.mean(axis=2), axis=1).sum()))
 
     other_train_loader, other_test_loader = get_data_loaders(use_cuda=use_cuda, device=device, batch_size=batch_size, dataset=get_other_dataset_name(training_dataset))
-    other_train_lls_dropout, other_class_probs_train_dropout, other_train_lls_sup_drop, other_train_lls_unsup_drop = evaluate_model_dropout(model, device, other_train_loader, "Other Train DROP", dropout_inference=dropout_inference, output_dir=d)
-    other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP", dropout_inference=dropout_inference, output_dir=d)
+    other_train_lls_dropout, other_class_probs_train_dropout, other_train_lls_sup_drop, other_train_lls_unsup_drop, other_train_lls_dropout_heads = evaluate_model_dropout(model, device, other_train_loader, "Other Train DROP",
+                                                                                                                                            dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+    other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop, other_test_lls_dropout_heads = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP",
+                                                                                                                                        dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
     print("DROP OTHER Train class entropy: {} DROP OTHER Test class entropy: {}".format(entropy(other_class_probs_train_dropout.mean(axis=2), axis=1).sum(), entropy(other_class_probs_test_dropout.mean(axis=2), axis=1).sum()))
 
     np.save(d_results + 'class_probs_in_domain_train_dropout', class_probs_train_dropout)
@@ -712,11 +726,16 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     np.save(d_results + 'class_probs_ood_train_dropout', other_class_probs_train_dropout)
     np.save(d_results + 'class_probs_ood_test_dropout', other_class_probs_test_dropout)
 
-    dropout_lls_dict = {"drop_train_lls":train_lls_dropout, "drop_test_lls":test_lls_dropout, "drop_other_mnist_train_lls":other_train_lls_dropout, "drop_other_mnist_test_lls":other_test_lls_dropout}
-    dropout_head_lls_dict_sup = {"drop_train_lls_sup":train_lls_sup_drop, "drop_test_lls_sup":test_lls_sup_drop, "drop_other_mnist_train_lls_sup":other_train_lls_sup_drop, "drop_other_mnist_test_lls_sup":other_test_lls_sup_drop}
-    dropout_head_lls_dict_unsup = {"drop_train_lls_unsup":train_lls_unsup_drop, "drop_test_lls_unsup":test_lls_unsup_drop, "drop_other_mnist_train_lls_unsup":other_train_lls_unsup_drop, "drop_other_mnist_test_lls_unsup":other_test_lls_unsup_drop}
+    np.save(d_results + 'train_lls_dropout_in_domain_heads', train_lls_dropout_heads)
+    np.save(d_results + 'test_lls_dropout_in_domain_heads', test_lls_dropout_heads)
+    np.save(d_results + 'train_lls_dropout_ood_heads', other_train_lls_dropout_heads)
+    np.save(d_results + 'test_lls_dropout_ood_heads', other_test_lls_dropout_heads)
+
+    dropout_lls_dict = {"drop_train_lls":train_lls_dropout, "drop_test_lls":test_lls_dropout, "drop_other_train_lls":other_train_lls_dropout, "drop_other_test_lls":other_test_lls_dropout}
+    dropout_head_lls_dict_sup = {"drop_train_lls_sup":train_lls_sup_drop, "drop_test_lls_sup":test_lls_sup_drop, "drop_other_train_lls_sup":other_train_lls_sup_drop, "drop_other_test_lls_sup":other_test_lls_sup_drop}
+    dropout_head_lls_dict_unsup = {"drop_train_lls_unsup":train_lls_unsup_drop, "drop_test_lls_unsup":test_lls_unsup_drop, "drop_other_train_lls_unsup":other_train_lls_unsup_drop, "drop_other_test_lls_unsup":other_test_lls_unsup_drop}
     dropout_class_probs_dict = {"drop_class_probs_train":class_probs_train_dropout.mean(axis=2).max(axis=1), "drop_class_probs_test":class_probs_test_dropout.mean(axis=2).max(axis=1),
-                                "other_drop_class_probs_train":other_class_probs_train_dropout.mean(axis=2).max(axis=1), "other_drop_class_probs_test":other_class_probs_test_dropout.mean(axis=2).max(axis=1)}
+                                "drop_other_class_probs_train":other_class_probs_train_dropout.mean(axis=2).max(axis=1), "drop_other_class_probs_test":other_class_probs_test_dropout.mean(axis=2).max(axis=1)}
 
     for k, v in dropout_lls_dict.items():
         np.save(d_likelihoods + k, v)
@@ -806,9 +825,10 @@ def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_
         float: Tuple of loss and accuracy.
     """
     model.eval()
-    data_ll_super = [] # pix it from the label-th head
+    data_ll_super = [] # pick it from the label-th head
     data_ll_unsup = [] # pick the max one
     data_ll = []
+    dropout_data_lls = torch.zeros(get_data_flatten_shape(loader)[0], 10, n_dropout_iters).to(device)
     n_dropout_iters = n_dropout_iters
     class_probs = torch.zeros((get_data_flatten_shape(loader)[0], 10, n_dropout_iters)).to(device)
     loss_nll = [0] * n_dropout_iters
@@ -833,6 +853,11 @@ def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_
                 loss_nll[i] += -output.sum().cpu()
                 pred = output.argmax(dim=1)
                 correct[i] += (pred == target).sum().item()
+
+                if batch_index == len(loader) - 1:
+                    dropout_data_lls[batch_index * loader.batch_size: batch_index * loader.batch_size + output.shape[0], :, i] = output
+                else:
+                    dropout_data_lls[batch_index * loader.batch_size: (batch_index+1)*loader.batch_size, :, i] = output
 
             drop_preds = class_probs[batch_index * loader.batch_size: (batch_index+1)*loader.batch_size, :, :].mean(dim=2).argmax(dim=1)
             drop_corrects += (drop_preds == target).sum()
@@ -861,7 +886,7 @@ def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_
     with open(output_dir + 'trainig.out', 'a') as writer:
         writer.write(output_string + "\n")
     assert len(data_ll) == get_data_flatten_shape(loader)[0]
-    return data_ll, class_probs.detach().cpu().numpy(), data_ll_super, data_ll_unsup
+    return data_ll, class_probs.detach().cpu().numpy(), data_ll_super, data_ll_unsup, dropout_data_lls.detach().cpu().numpy()
 
 
 def evaluate_model_corrupted_digits(model: torch.nn.Module, device, loader, tag, dropout_inference=0.01, n_dropout_iters=100, output_dir="", corruption=corruptions.glass_blur, class_label=None, severity=None) -> float:
@@ -1222,13 +1247,26 @@ def plot_boxplot_corrupted_digits(data, filename='boxplot_corrupted_digits', tit
 
 def plot_histograms(lls_dict, filename='histogram', title="", path=None, trained_on_fmnist=False, y_lim=None):
 
-    dataset_names = ["F-MNIST", "MNIST"]
+    dataset_names = [trained_on_fmnist.upper(), get_other_dataset_name(trained_on_fmnist).upper()]
     if not trained_on_fmnist: dataset_names.reverse()
 
-    plt.hist(np.nan_to_num(lls_dict["mnist_train"]), label=dataset_names[0] + " Train", alpha=0.5, bins=20, color='red')
-    plt.hist(np.nan_to_num(lls_dict["mnist_test"]), label=dataset_names[0] + " Test", alpha=0.5, bins=20, color='blue')
-    plt.hist(np.nan_to_num(lls_dict["other_mnist_train"]), label=dataset_names[1] + " Train (OOD)", alpha=0.5, bins=20, color='orange')
-    plt.hist(np.nan_to_num(lls_dict["other_mnist_test"]), label=dataset_names[1] + " Test (OOD)", alpha=0.5, bins=20, color='yellow')
+    if not "train_lls" in lls_dict.keys():
+        lls_dict_renamed = {}
+        for k, v in lls_dict.items():
+            if "other_train" in k or "other_class_probs_train" in k:
+                lls_dict_renamed["other_train_lls"] = v
+            if "other_test" in k or "other_class_probs_test" in k:
+                lls_dict_renamed["other_test_lls"] = v
+            if "train_lls" in k or "class_probs_train" in k:
+                lls_dict_renamed["train_lls"] = v
+            if "test_lls" in k or "class_probs_test" in k:
+                lls_dict_renamed["test_lls"] = v
+        lls_dict = lls_dict_renamed
+
+    plt.hist(np.nan_to_num(lls_dict["train_lls"]), label=dataset_names[0] + " Train", alpha=0.5, bins=20, color='red')
+    plt.hist(np.nan_to_num(lls_dict["test_lls"]), label=dataset_names[0] + " Test", alpha=0.5, bins=20, color='blue')
+    plt.hist(np.nan_to_num(lls_dict["other_train_lls"]), label=dataset_names[1] + " Train (OOD)", alpha=0.5, bins=20, color='orange')
+    plt.hist(np.nan_to_num(lls_dict["other_test_lls"]), label=dataset_names[1] + " Test (OOD)", alpha=0.5, bins=20, color='yellow')
     plt.legend(loc=0)
     plt.title("Histogram {}".format(title))
     if y_lim:
@@ -1262,30 +1300,23 @@ if __name__ == "__main__":
 
     corrupted_cifar_dir='/home/fabrizio/research/CIFAR-10-C/'
 
-    load_torch(model_dir='results/2022-05-15_05-20-35/model/', train_on_fmnist=False, dropout_inference=0.2) # lambda 0. mnist
-    sys.exit()
+    run_torch(3, 200, dropout_inference=0.2, dropout_spn=0.2,
+              training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=20, corrupted_cifar_dir=corrupted_cifar_dir)
+    # run_torch(3, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=20, corrupted_cifar_dir=corrupted_cifar_dir)
+    # run_torch(3, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='cifar', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir)
+
+    # load_torch(model_dir='results/2022-05-15_05-20-35/model/', train_on_fmnist=False, dropout_inference=0.2) # lambda 0. mnist
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=1.0, eval_single_digit=False, toy_setting=False, eval_rotation=False)
 
 
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=1.0, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=True, lmbda=1.0, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=0.8, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=0.6, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=0.4, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=0.2, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=0.1, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=0.0, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=True, lmbda=0.8, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=True, lmbda=0.6, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=True, lmbda=0.4, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=True, lmbda=0.2, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=True, lmbda=0.1, eval_single_digit=False, toy_setting=False, eval_rotation=False)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=True, lmbda=0.0, eval_single_digit=False, toy_setting=False, eval_rotation=False)
 
 # TODO
+# - add logging instead of prints
 # - double check batch index stuff to do not skip last samples < batch size
 # - another interesting experiment with rotating mnist would be showing a confusion matrix over the rotations
 # - MCD over SPN with one forward pass (pass a vector of values for each sample, or add dim on sum node weight matrices)
