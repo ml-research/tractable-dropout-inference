@@ -161,10 +161,19 @@ class RatSpn(nn.Module):
         x = self._randomize(x)
 
         # Apply leaf distributions
-        x = self._leaf(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+        x = self._leaf(x, test_dropout=False, dropout_inference=0.0)
+        # x = self._leaf(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
+        #     print('leaves ', x)
+        #     breakpoint()
+        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
+        #     print('leaves ', x)
+        #     print(self._leaf.base_leaf.means)
+        #     breakpoint()
 
         # Pass through intermediate layers
         x = self._forward_layers(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+
 
         # Merge results from the different repetitions into the channel dimension
         n, d, c, r = x.size()
@@ -194,7 +203,18 @@ class RatSpn(nn.Module):
         """
         # Forward to inner product and sum layers
         for layer in self._inner_layers:
+            # x_copy = x.detach().clone()
             x = layer(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+            # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
+            #     print('layers ', x)
+            #     print('input ', x_copy)
+            #     print(layer)
+            #     breakpoint()
+            # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
+            #     print('layers ', x)
+            #     print('input ', x_copy)
+            #     print(layer)
+            #     breakpoint()
         return x
 
     def _build(self):

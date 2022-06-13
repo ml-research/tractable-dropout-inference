@@ -95,33 +95,96 @@ class Sum(AbstractLayer):
         if self._is_input_cache_enabled:
             self._input_cache = x.clone()
 
+        # TODO for debug only
+        # x_copy = x.detach().clone()
+        # x_copy_2 = x.detach().clone()
+        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
+        #     print(x)
+        #     breakpoint()
+
+        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
+        #     print('input ', x)
+        #     breakpoint()
+        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
+        #     print('input sum ', x)
+        #     breakpoint()
+
+        x_copy = x.detach().clone()
+
+
         # Apply dropout: Set random sum node children to 0 (-inf in log domain)
         # TODO change
         #if self.dropout > 0.0 and self.training:
         if self.training and self.dropout > 0.0:
             dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
+            while torch.any(torch.all(dropout_indices, dim=2)):
+                dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
         if test_dropout and dropout_inference > 0.0:
             dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool() #NOTE not the most efficient way
-            # print(dropout_indices.shape)
+            while torch.any(torch.all(dropout_indices, dim=2)):
+                dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
+            #print(dropout_indices.sum())
+            #print(dropout_indices.shape)
             # breakpoint()
             x[dropout_indices] = np.NINF
+            # x_copy_2[torch.distributions.Bernoulli(probs=0.6).sample(x.shape).bool()] = np.NINF
+            #print(x)
+
+        dropped_x_copy = x.detach().clone()
 
         # Dimensions
         n, d, ic, r = x.size()
         oc = self.weights.size(2)
 
         x = x.unsqueeze(3)  # Shape: [n, d, ic, 1, r]
+        # x_copy = x_copy.unsqueeze(3)
+        # x_copy_2 = x_copy_2.unsqueeze(3)
+
 
         # Normalize weights in log-space along in_channel dimension
         # Weights is of shape [d, ic, oc, r]
+        # print('weights ',  self.weights)
+        # print('weights ls ', F.log_softmax(self.weights, dim=1))
+        # print('weights grad ', self.weights.grad)
+        # print(F.softmax(self.weights))
         logweights = F.log_softmax(self.weights, dim=1)
+
+        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
+        #     print('sum ', x)
+        #     breakpoint()
+        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
+        #     print('sum 2 ', x)
+        #     breakpoint()
 
         # Multiply (add in log-space) input features and weights
         x = x + logweights  # Shape: [n, d, ic, oc, r]
+        # x_copy = x_copy + logweights
+        # x_copy_2 = x_copy_2 + logweights
+
+
 
         # Compute sum via logsumexp along in_channels dimension
         x = torch.logsumexp(x, dim=2)  # Shape: [n, d, oc, r]
+        # x_copy = torch.logsumexp(x_copy, dim=2)
+        # x_copy_2 = torch.logsumexp(x_copy_2, dim=2)
+
+        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
+        #     print('sum 3', x)
+        #     breakpoint()
+        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
+        #     print('sum 4 ', x)
+        #     breakpoint()
+
+        # Assert correct dimensions
+        # assert x.size() == (n, d, oc, r)
+        # assert x_copy.size() == (n, d, oc, r)
+        # assert x_copy_2.size() == (n, d, oc, r)
+
+        # if test_dropout:
+        #     breakpoint()
+
+
 
         # Assert correct dimensions
         assert x.size() == (n, d, oc, r)

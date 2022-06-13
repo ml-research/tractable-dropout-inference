@@ -142,9 +142,16 @@ class Leaf(AbstractLayer):
         if self.dropout > 0.0 and self.training:
             dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = 0.0
+            # print("*"*80)
+            # print((x == 0.0).sum())
+            # print(dropout_indices.sum())
+            # assert(dropout_indices.sum() <=  (x == 0.0).sum())
         if test_dropout and dropout_inference > 0.0:
             dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool() #NOTE not the most efficient way
             x[dropout_indices] = 0.0
+            # x[dropout_indices] = np.NINF # TODO test by "truncating" the leaf distribution
+            # print(dropout_indices.sum())
+            # assert (dropout_indices.sum() <= (x == 0.0).sum())
         return x
 
     def _marginalize_input(self, x: torch.Tensor) -> torch.Tensor:
@@ -158,7 +165,7 @@ class Leaf(AbstractLayer):
         x = dist_forward(d, x)
 
         x = self._marginalize_input(x)
-        x = self._apply_dropout(x, test_dropout=False, dropout_inference=0.0)
+        x = self._apply_dropout(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
 
         return x
 

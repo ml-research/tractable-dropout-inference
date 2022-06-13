@@ -13,6 +13,7 @@ from torchvision import datasets, transforms
 
 from spn.experiments.RandomSPNs_layerwise.distributions import RatNormal
 from spn.experiments.RandomSPNs_layerwise.rat_spn import RatSpn, RatSpnConfig
+from spn.algorithms.layerwise.layers import CrossProduct, Sum
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -25,6 +26,7 @@ import pdb
 from scipy.stats import entropy
 
 import spn.experiments.RandomSPNs_layerwise.mnist_c.corruptions as corruptions
+from sklearn import datasets as sk_datasets
 
 class CustomTensorDataset(Dataset):
     """TensorDataset with support of transforms.
@@ -39,6 +41,29 @@ class CustomTensorDataset(Dataset):
     def __getitem__(self, index):
         x = self.tensors[0][index]
         x = Image.fromarray(x.numpy(), mode=None)
+
+        if self.transform:
+            x = self.transform(x)
+
+        y = self.tensors[1][index]
+
+        return x, y
+
+    def __len__(self):
+        return self.tensors[0].shape[0]
+
+class Simple2dTensorDataset(Dataset):
+    """TensorDataset for 2d datasets.
+    """
+    def __init__(self, tensors, transform=None):
+        assert all(tensors[0].shape[0] == tensor.shape[0] for tensor in tensors)
+        self.tensors = tensors
+        self.transform = transform
+        self.data = self.tensors[0]
+        self.targets = self.tensors[1]
+
+    def __getitem__(self, index):
+        x = self.tensors[0][index]
 
         if self.transform:
             x = self.transform(x)
@@ -92,6 +117,187 @@ def count_params(model: torch.nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
+def get_2moons_loaders(use_cuda, device, batch_size, fourD=True, n_samples=1000):
+    """
+    Get the 2 moons pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    test_batch_size = batch_size
+
+    noisy_moons = sk_datasets.make_moons(n_samples=n_samples, noise=.05)[0]
+    noisy_moons_neg = noisy_moons + 4
+
+    # standardization
+    noisy_moons -= np.mean(noisy_moons, axis=0)
+    noisy_moons /= np.std(noisy_moons, axis=0)
+
+    noisy_moons_neg -= np.mean(noisy_moons_neg, axis=0)
+    noisy_moons_neg /= np.std(noisy_moons_neg, axis=0)
+
+    print("Noisy moon mean {}, std {}".format(noisy_moons.mean(axis=0), noisy_moons.std(axis=0)))
+    print("Noisy moon neg mean {}, std {}".format(noisy_moons_neg.mean(axis=0), noisy_moons_neg.std(axis=0)))
+
+    training_data = np.row_stack((noisy_moons, noisy_moons_neg))
+    if fourD:
+        training_data = np.column_stack((training_data, training_data))
+    training_targets = np.concatenate((np.ones(noisy_moons.shape[0]), np.zeros(noisy_moons_neg.shape[0])))
+    # print(training_targets)
+    # training_targets = one_hot(training_targets.astype(int))
+    # print(training_targets)
+
+    test_data = training_data
+    test_targets = training_targets
+
+    training_set = Simple2dTensorDataset(tensors=[torch.tensor(training_data, dtype=torch.float32), torch.tensor(training_targets, dtype=torch.int64)])
+    test_set = Simple2dTensorDataset(tensors=[torch.tensor(test_data, dtype=torch.float32), torch.tensor(test_targets, dtype=torch.int64)])
+
+    assert batch_size <= training_data.shape[0]
+
+    # Train data loader
+    train_loader = torch.utils.data.DataLoader(
+        training_set,
+        batch_size=batch_size,
+        shuffle=True,
+        **kwargs,
+    )
+
+    assert batch_size <= test_data.shape[0]
+
+    # Test data loader
+    test_loader = torch.utils.data.DataLoader(
+        test_set,
+        batch_size=test_batch_size,
+        shuffle=False,
+        **kwargs,
+    )
+    return train_loader, test_loader
+
+def get_4gaussians_loaders(use_cuda, device, batch_size, n_samples=1000):
+    """
+    Get the 2 moons pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    test_batch_size = batch_size
+
+    train_4g = np.c_[np.r_[np.random.normal(5, 0.2, (n_samples, 1))], np.r_[np.random.normal(10, 0.2, (n_samples, 1))],
+                            np.r_[np.random.normal(15, 0.2, (n_samples, 1))], np.r_[np.random.normal(20, 0.2, (n_samples, 1))]]
+    train_4g_neg = np.c_[np.r_[np.random.normal(-5, 0.2, (n_samples, 1))], np.r_[np.random.normal(-10, 0.2, (n_samples, 1))],
+                            np.r_[np.random.normal(-15, 0.2, (n_samples, 1))], np.r_[np.random.normal(-30, 0.2, (n_samples, 1))]]
+
+    # print(train_4g)
+    # print(train_4g_neg)
+    print(train_4g.shape)
+    print(train_4g_neg.shape)
+
+    # standardization
+    train_4g -= np.mean(train_4g, axis=0)
+    train_4g /= np.std(train_4g, axis=0)
+
+    train_4g_neg -= np.mean(train_4g_neg, axis=0)
+    train_4g_neg /= np.std(train_4g_neg, axis=0)
+
+    print("4 gaussians mean {}, std {}".format(train_4g.mean(axis=0), train_4g.std(axis=0)))
+    print("4 gaussians neg mean {}, std {}".format(train_4g_neg.mean(axis=0), train_4g_neg.std(axis=0)))
+
+    training_data = np.row_stack((train_4g, train_4g_neg))
+    training_targets = np.concatenate((np.ones(train_4g.shape[0]), np.zeros(train_4g_neg.shape[0])))
+
+    test_data = training_data
+    test_targets = training_targets
+
+    training_set = Simple2dTensorDataset(tensors=[torch.tensor(training_data, dtype=torch.float32), torch.tensor(training_targets, dtype=torch.int64)])
+    test_set = Simple2dTensorDataset(tensors=[torch.tensor(test_data, dtype=torch.float32), torch.tensor(test_targets, dtype=torch.int64)])
+
+    assert batch_size <= training_data.shape[0]
+
+    # Train data loader
+    train_loader = torch.utils.data.DataLoader(
+        training_set,
+        batch_size=batch_size,
+        shuffle=True,
+        **kwargs,
+    )
+
+    assert batch_size <= test_data.shape[0]
+
+    # Test data loader
+    test_loader = torch.utils.data.DataLoader(
+        test_set,
+        batch_size=test_batch_size,
+        shuffle=False,
+        **kwargs,
+    )
+    return train_loader, test_loader
+
+def get_2gaussians_loaders(use_cuda, device, batch_size, fourD=True, n_samples=1000):
+    """
+    Get the 2 moons pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    test_batch_size = batch_size
+
+    train_2g = np.c_[np.r_[np.random.normal(5, 1, (n_samples, 2))]]
+    train_2g_neg = np.c_[np.r_[np.random.normal(10, 1, (n_samples, 2))]]
+
+    # standardization
+    train_2g -= np.mean(train_2g, axis=0)
+    train_2g /= np.std(train_2g, axis=0)
+
+    train_2g_neg -= np.mean(train_2g_neg, axis=0)
+    train_2g_neg /= np.std(train_2g_neg, axis=0)
+
+    print("2gaussians mean {}, std {}".format(train_2g.mean(axis=0), train_2g.std(axis=0)))
+    print("2gaussians neg mean {}, std {}".format(train_2g_neg.mean(axis=0), train_2g_neg.std(axis=0)))
+
+    training_data = np.row_stack((train_2g, train_2g_neg))
+    if fourD:
+        #training_data = np.column_stack((training_data, training_data))
+        training_data = np.column_stack((np.c_[np.r_[np.random.normal(0, 1, (n_samples * 2, 2))]],
+                                         np.c_[np.r_[np.random.normal(0, 1, (n_samples * 2, 2))]]))
+    training_targets = np.concatenate((np.ones(train_2g.shape[0]), np.zeros(train_2g_neg.shape[0])))
+    # print(training_targets)
+    # training_targets = one_hot(training_targets.astype(int))
+    # print(training_targets)
+
+    test_data = training_data
+    test_targets = training_targets
+
+    training_set = Simple2dTensorDataset(tensors=[torch.tensor(training_data, dtype=torch.float32), torch.tensor(training_targets, dtype=torch.int64)])
+    test_set = Simple2dTensorDataset(tensors=[torch.tensor(test_data, dtype=torch.float32), torch.tensor(test_targets, dtype=torch.int64)])
+
+    assert batch_size <= training_data.shape[0]
+
+    # Train data loader
+    train_loader = torch.utils.data.DataLoader(
+        training_set,
+        batch_size=batch_size,
+        shuffle=True,
+        **kwargs,
+    )
+
+    assert batch_size <= test_data.shape[0]
+
+    # Test data loader
+    test_loader = torch.utils.data.DataLoader(
+        test_set,
+        batch_size=test_batch_size,
+        shuffle=False,
+        **kwargs,
+    )
+    return train_loader, test_loader
+
 def get_d_mnist_loaders(use_cuda, device, batch_size):
     """
     Get the MNIST pytorch data loader.
@@ -116,7 +322,7 @@ def get_d_mnist_loaders(use_cuda, device, batch_size):
     test_loader = torch.utils.data.DataLoader(
         datasets.MNIST("../data", train=False, transform=transformer),
         batch_size=test_batch_size,
-        shuffle=True,
+        shuffle=False,
         **kwargs,
     )
     return train_loader, test_loader
@@ -285,6 +491,12 @@ def get_data_loaders(use_cuda, device, batch_size, dataset='mnist'):
         return get_cifar_loaders(use_cuda, device, batch_size)
     elif dataset == 'svhn':
         return get_svhn_loaders(use_cuda, device, batch_size)
+    elif dataset == '2moons':
+        return get_2moons_loaders(use_cuda, device, batch_size, n_samples=1000)
+    elif dataset == '2gaussians':
+        return get_2gaussians_loaders(use_cuda, device, batch_size, n_samples=1000)
+    elif dataset == '4gaussians':
+        return get_4gaussians_loaders(use_cuda, device, batch_size, n_samples=100)
 
 
 def get_data_flatten_shape(data_loader):
@@ -295,7 +507,7 @@ def get_data_flatten_shape(data_loader):
             torch.prod(torch.tensor(data_loader.dataset.data.shape[1:])).int().item())
 
 
-def make_spn(S, I, R, D, dropout, device, F=28 ** 2) -> RatSpn:
+def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10) -> RatSpn:
     """Construct the RatSpn"""
 
     # Setup RatSpnConfig
@@ -305,10 +517,12 @@ def make_spn(S, I, R, D, dropout, device, F=28 ** 2) -> RatSpn:
     config.D = D
     config.I = I
     config.S = S
-    config.C = 10
+    config.C = C
     config.dropout = dropout
     config.leaf_base_class = RatNormal
     config.leaf_base_kwargs = {}
+    #config.leaf_base_kwargs = {"min_sigma": 0.1, "max_sigma": 2.0}
+    #config.leaf_base_kwargs = {"min_sigma": 0.1, "max_sigma": 2.0, "min_mean": -1., "max_mean": 7.}
 
     # Construct RatSpn from config
     model = RatSpn(config)
@@ -334,12 +548,238 @@ def get_other_dataset_name(training_dataset):
         return 'svhn'
     elif training_dataset == 'svhn':
         return 'cifar'
+    elif training_dataset == '2moons':
+        return '2gaussians'
+    elif training_dataset == '2gaussians':
+        return '2moons'
+    elif training_dataset == '4gaussians':
+        return '2moons'
 
+def plot_sum_weights(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512, rat_S=20, rat_I=20, rat_D=5, rat_R=5):
+    import pandas as pd
+    import seaborn as sns
+
+    dev = sys.argv[1]
+    device = torch.device("cuda:0")
+    use_cuda = True
+    torch.cuda.benchmark = True
+
+    d = model_dir + "post_hoc_results/plots/"
+    ensure_dir(d)
+    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
+    n_features = get_data_flatten_shape(train_loader)[1]
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_inference, F=n_features)
+    print(model)
+
+    checkpoint = torch.load(model_dir + 'checkpoint.tar')
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+
+    sum_layer_idx = 0
+
+
+    for hn in model._inner_layers:
+        if isinstance(hn, Sum):
+            sum_layer_idx += 1
+            filename = "sum_node_weights_l_{}_histogram.pdf".format(sum_layer_idx)
+            norm_weights = torch.nn.functional.softmax(hn.weights, dim=1)
+            print(norm_weights.shape)
+
+            # num of sum node weights greather than 0.4 for each sum node
+            weight_threshold = 0.4
+
+            big_weights_nodes = torch.any(norm_weights > weight_threshold, dim=1)
+            n_big_weights_nodes = big_weights_nodes.sum().item()
+            big_weights_nodes_ratio = n_big_weights_nodes / torch.prod(torch.tensor(big_weights_nodes.shape)).item()
+
+            big_weights = (norm_weights > weight_threshold)
+            n_big_weights = big_weights.sum().item()
+            big_weights_ratio = n_big_weights / torch.prod(torch.tensor(big_weights.shape)).item()
+
+            norm_weights_flatten = norm_weights.flatten().cpu().detach().numpy()
+            # nw = pd.DataFrame({'Sum node wights': norm_weights}, index=[0])
+            # nw = nw.rename({0: 'Sum node weights'})
+            p3 = sns.histplot(data=norm_weights_flatten, stat="density", element="bars", common_norm=False,
+                              color='navy')
+            additional_text = "{:.2f}% of sum nodes has one (or more) weight > {}".format(big_weights_nodes_ratio * 100,
+                                                                                              weight_threshold)
+            additional_text_2 = "{:.2f}% of weights is > {}".format(
+                big_weights_ratio * 100,
+                weight_threshold)
+
+            p3.text(0.1, 200, additional_text, fontsize=9, color='blue')
+            p3.text(0.1, 600, additional_text_2, fontsize=9, color='blue')
+
+            p3.set(xlabel='weight value', ylabel='# weights')
+            p3.set_title("{}\u2070 sum node layer".format(sum_layer_idx))
+            # p3.set_xlim(x_lim_left, x_lim_right)
+            fig3 = p3.get_figure()
+            fig3.savefig(d + filename)
+            plt.close()
+
+
+
+
+def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512, rat_S=20, rat_I=20, rat_D=5, rat_R=5):
+    import pandas as pd
+    import seaborn as sns
+
+    dev = sys.argv[1]
+    device = torch.device("cuda:0")
+    use_cuda = True
+    torch.cuda.benchmark = True
+
+    d = model_dir + "post_hoc_results/"
+    ensure_dir(d)
+    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
+    n_features = get_data_flatten_shape(train_loader)[1]
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_inference[0], F=n_features)
+
+    # checkpoint = torch.load(model_dir + 'checkpoint.tar')
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # old models
+    model.load_state_dict(torch.load(model_dir + 'model.pt'))
+    model.eval()
+
+    if isinstance(dropout_inference, float):
+        d_inf = [dropout_inference]
+    else:
+        d_inf = dropout_inference
+
+    if isinstance(n_mcd_passes, float):
+        fwd_passes = [n_mcd_passes]
+    else:
+        fwd_passes = n_mcd_passes
+
+    for dropout_inference in d_inf:
+        for n_mcd_passes in fwd_passes:
+            print("MCD p {} FWD passes {}".format(dropout_inference, n_mcd_passes))
+
+            train_lls, class_probs_train, train_lls_sup, train_lls_unsup, train_ce, train_nll = evaluate_model(model, device, train_loader, "Train", output_dir=d)
+            np.save(d + 'train_lls', train_lls)
+            np.save(d + 'train_nll', train_nll.cpu().numpy())
+            test_lls, class_probs_test, test_lls_sup, test_lls_unsup, test_ce, test_nll = evaluate_model(model, device, test_loader, "Test", output_dir=d)
+            np.save(d + 'test_lls', test_lls)
+            np.save(d + 'test_nll', test_nll.cpu().numpy())
+            other_mnist_train_lls, other_mnist_test_lls, other_class_probs_train, other_class_probs_test, other_mnist_train_lls_sup, other_mnist_train_lls_unsup, other_mnist_test_lls_sup, other_mnist_test_lls_unsup = get_other_lls(model, device, d, use_cuda, batch_size, training_dataset=training_dataset)
+            np.save(d + 'other_train_lls', other_mnist_train_lls)
+            np.save(d + 'other_test_lls', other_mnist_test_lls)
+
+            lls_dict = {"train_lls":train_lls, "test_lls":test_lls, "other_mnist_train_lls":other_mnist_train_lls, "other_mnist_test_lls":other_mnist_test_lls}
+            head_lls_dict_sup = {"train_lls_sup":train_lls_sup, "test_lls_sup":test_lls_sup, "other_mnist_train_lls_sup":other_mnist_train_lls_sup, "other_mnist_test_lls_sup":other_mnist_test_lls_sup}
+            head_lls_dict_unsup = {"train_lls_unsup":train_lls_unsup, "test_lls_unsup":test_lls_unsup, "other_mnist_train_unsup":other_mnist_train_lls_unsup, "other_mnist_test_unsup":other_mnist_test_lls_unsup}
+
+
+            train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop, train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+            np.save(d + 'drop_train_lls', train_lls_dropout)
+            np.save(d + 'drop_train_nll', train_lls_dropout_heads.cpu().numpy())
+            test_lls_dropout, class_probs_test_dropout, test_lls_sup_drop, test_lls_unsup_drop, test_lls_dropout_heads = evaluate_model_dropout(model, device, test_loader, "Test DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+            np.save(d + 'drop_test_lls', test_lls_dropout)
+            np.save(d + 'drop_test_nll', test_lls_dropout_heads.cpu().numpy())
+
+            other_train_loader, other_test_loader = get_data_loaders(use_cuda=use_cuda, device=device, batch_size=batch_size, dataset=get_other_dataset_name(training_dataset))
+            other_train_lls_dropout, other_class_probs_train_dropout, other_train_lls_sup_drop, other_train_lls_unsup_drop, other_train_lls_dropout_heads = evaluate_model_dropout(model, device, other_train_loader, "Other Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+            np.save(d + 'drop_other_train_lls', other_train_lls_dropout)
+            np.save(d + 'drop_other_train_nll', other_train_lls_dropout_heads.cpu().numpy())
+            other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop, other_test_lls_dropout_heads = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+            np.save(d + 'drop_other_test_lls', other_test_lls_dropout)
+            np.save(d + 'drop_other_test_nll', other_test_lls_dropout_heads.cpu().numpy())
+
+            dropout_lls_dict = {"drop_train_lls":train_lls_dropout, "drop_test_lls":test_lls_dropout, "drop_other_mnist_train_lls":other_train_lls_dropout, "drop_other_mnist_test_lls":other_test_lls_dropout}
+            dropout_head_lls_dict_sup = {"drop_train_lls_sup":train_lls_sup_drop, "drop_test_lls_sup":test_lls_sup_drop, "drop_other_mnist_train_lls_sup":other_train_lls_sup_drop, "drop_other_mnist_test_lls_sup":other_test_lls_sup_drop}
+            dropout_head_lls_dict_unsup = {"drop_train_lls_unsup":train_lls_unsup_drop, "drop_test_lls_unsup":test_lls_unsup_drop, "drop_other_mnist_train_lls_unsup":other_train_lls_unsup_drop, "drop_other_mnist_test_lls_unsup":other_test_lls_unsup_drop}
+            breakpoint()
+
+
+
+
+            # plots
+            filename = "lls_histograms.pdf"
+            x_lim_left = min(min(train_lls), min(test_lls), min(other_mnist_test_lls), min(train_lls_dropout),
+                             min(test_lls_dropout), min(other_test_lls_dropout))
+            x_lim_right = max(max(train_lls), max(test_lls), max(other_mnist_test_lls), max(train_lls_dropout),
+                             max(test_lls_dropout), max(other_test_lls_dropout))
+            # print(x_lim_left, x_lim_right)
+            y_lim_left = 0.0
+            y_lim_right = 0.06
+            # lls_in_domain_train = np.load(d_results + 'train_lls.npy')
+            # lls_in_domain_test = np.load(d_results + 'test_lls.npy')
+            # # other_train_lls = np.load(d_results + 'other_mnist_train_lls.npy')
+            # # other_test_lls = np.load(d_results + 'other_mnist_test_lls.npy')
+            # other_train_lls = np.load(d_results + 'other_train_lls.npy')
+            # other_test_lls = np.load(d_results + 'other_test_lls.npy')
+
+            df_in_train = pd.DataFrame({'lls_train': train_lls})
+            df_in_test = pd.DataFrame({'lls_test': test_lls})
+            # df_ood_train = pd.DataFrame({'other_train_lls':other_mnist_train_lls})
+            df_ood_test = pd.DataFrame({'other_test_lls': other_mnist_test_lls})
+
+            data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+            data = data.rename({0: 'F-MNIST Train (In-domain)', 1: 'F-MNIST Test (In-domain)', 2: 'MNIST Test (OOD)'}, axis=1)
+
+            palette = {"F-MNIST Train (In-domain)": "yellow", "F-MNIST Test (In-domain)": "green", "MNIST Test (OOD)": "blue"}
+            my_palette = palette
+            # p3 = sns.histplot(data=data, x='value', hue='column',  bins=50, multiple='layer', kde=True)
+            # p3 = sns.histplot(data=data, multiple='layer', stat="density", palette=palette, cbar_kws={'alpha':0.3})
+            p3 = sns.histplot(data=data, stat="density", element="bars", common_norm=False, palette=my_palette)
+            # p3 = sns.distplot(a=data, bins=20,  hist_kws={"alpha":0.2, "stat":"probability", "element":"step", "common_norm":False})
+            # p3 = sns.distplot(df_melted,  bins=50)
+            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set_xlim(x_lim_left, x_lim_right)
+            # p3.set_ylim(y_lim_left, y_lim_right)
+            p3.set_title("Probabilistic Circuit")
+            # p3.map(plt.hist, alpha=0.5)
+            # p3 = sns.histplot(data=data, bins=20, multiple='layer')
+            fig3 = p3.get_figure()
+            fig3.savefig(d + "DE_" + filename)
+            plt.close()
+
+            p3 = sns.histplot(data=data, stat="probability", element="bars", common_norm=False, palette=my_palette)
+            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set_xlim(x_lim_left, x_lim_right)
+            p3.set_ylim(y_lim_left, y_lim_right)
+            p3.set_title("Probabilistic Circuit")
+            # p3.map(plt.hist, alpha=0.5)
+            # p3 = sns.histplot(data=data, bins=20, multiple='layer')
+            fig3 = p3.get_figure()
+            fig3.savefig(d + filename)
+            plt.close()
+
+            # lls_in_domain_train = np.load(d_results + 'drop_train_lls.npy')
+            # lls_in_domain_test = np.load(d_results + 'drop_test_lls.npy')
+            # # other_train_lls = np.load(d_results + 'drop_other_mnist_train_lls.npy')
+            # # other_test_lls = np.load(d_results + 'drop_other_mnist_test_lls.npy')
+            # other_train_lls = np.load(d_results + 'drop_train_lls.npy')
+            # other_test_lls = np.load(d_results + 'drop_test_lls.npy')
+
+            df_in_train = pd.DataFrame({'lls_train': train_lls_dropout})
+            df_in_test = pd.DataFrame({'lls_test': test_lls_dropout})
+            # df_ood_train = pd.DataFrame({'other_train_lls':other_train_lls_dropout})
+            df_ood_test = pd.DataFrame({'other_test_lls': other_test_lls_dropout})
+
+            data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+            data = data.rename({0: 'F-MNIST Train (In-domain)', 1: 'F-MNIST Test (In-domain)', 2: 'MNIST Test (OOD)'}, axis=1)
+            p3 = sns.histplot(data=data, stat="density", element="bars", common_norm=False, palette=my_palette)
+            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set_xlim(x_lim_left, x_lim_right)
+            # p3.set_ylim(y_lim_left, y_lim_right)
+            p3.set_title("Dropout Circuit [p {} passes {}]".format(dropout_inference, n_mcd_passes))
+
+            fig3 = p3.get_figure()
+            fig3.savefig(d + "DE_drop_{}_passes_{}_".format(dropout_inference, n_mcd_passes) + filename)
+            plt.close()
+
+            p3 = sns.histplot(data=data, stat="probability", element="bars", common_norm=False, palette=my_palette)
+            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set_xlim(x_lim_left, x_lim_right)
+            p3.set_ylim(y_lim_left, y_lim_right)
+            p3.set_title("Dropout Circuit [p {} passes {}]".format(dropout_inference, n_mcd_passes))
+
+            fig3 = p3.get_figure()
+            fig3.savefig(d + "drop_{}_passes_{}_".format(dropout_inference, n_mcd_passes) + filename)
+            plt.close()
 
 def load_torch(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512, rat_S=20, rat_I=20, rat_D=5, rat_R=5):
-    from torch import optim
-    from torch import nn
-
     dev = sys.argv[1]
     device = torch.device("cuda:0")
     use_cuda = True
@@ -394,7 +834,7 @@ def load_torch(model_dir=None, training_dataset=None, dropout_inference=None, n_
 
 def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0.0, training_dataset='mnist',
               lmbda=0.0, eval_single_digit=False, toy_setting=False, eval_rotation=False, mnist_corruptions=False,
-              n_mcd_passes=100, corrupted_cifar_dir='', eval_every_n_epochs=5):
+              n_mcd_passes=100, corrupted_cifar_dir='', eval_every_n_epochs=5, lr=1e-3):
     """Run the torch code.
 
     Args:
@@ -422,25 +862,33 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
     n_features = get_data_flatten_shape(train_loader)[1]
+    print(n_features)
 
 
     if toy_setting:
-        rat_S, rat_I, rat_D, rat_R = 2, 4, 2, 1
+        rat_S, rat_I, rat_D, rat_R, rat_C = 2, 4, 2, 1, 10
+    elif training_dataset == '2moons' or training_dataset == '2gaussians' or training_dataset == '4gaussians':
+        rat_S, rat_I, rat_D, rat_R, rat_C = 4, 32, 2, 2, 2
     elif training_dataset == 'cifar' or training_dataset == 'svhn':
-        rat_S, rat_I, rat_D, rat_R = 30, 30, 5, 10
+        rat_S, rat_I, rat_D, rat_R, rat_C = 30, 30, 5, 10, 10
     else:
-        rat_S, rat_I, rat_D, rat_R = 20, 20, 5, 5
+        rat_S, rat_I, rat_D, rat_R, rat_C = 20, 20, 5, 5, 10
 
-
-    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_spn, F=n_features)
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_spn, F=n_features, C=rat_C)
     model.train()
     print(model)
     n_rat_params = count_params(model)
     print("Number of pytorch parameters: ", n_rat_params)
 
     # Define optimizer
-    loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    if model.config.C == 2:
+        loss_fn = nn.BCELoss()
+    else:
+        loss_fn = nn.CrossEntropyLoss()
+    #loss_fn = nn.NLLLoss()
+
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    print("Learning rate: {}".format(lr))
 
     log_interval = 100
 
@@ -456,9 +904,10 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     with open(d + 'training_details.out', 'a') as writer:
         writer.write("Dataset: {}, N features {}".format(training_dataset, n_features))
         writer.write("\nn epochs: {}, batch size: {}".format(n_epochs, batch_size))
+        writer.write("\nLearning rate {}".format(lr))
         writer.write("\nMC dropout p {}, dropout (learning) {}".format(dropout_inference, dropout_spn))
         writer.write("\nRAT lambda {}".format(lmbda))
-        writer.write("\nRAT hyperparameters S {} I {} D {} R {}".format(rat_S, rat_I, rat_D, rat_R))
+        writer.write("\nRAT hyperparameters S {} I {} D {} R {} C {}".format(rat_S, rat_I, rat_D, rat_R, rat_C))
         writer.write("\nRAT n of model params: {}".format(n_rat_params))
         writer.write("\nN MCD passes: {}".format(n_mcd_passes))
 
@@ -483,9 +932,14 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
         epoch_loss_nll = 0.0
 
         for batch_index, (data, target) in enumerate(train_loader):
+            if model.config.C == 2:
+                target = torch.tensor(one_hot(target.numpy()), dtype=torch.float)
+
             # Send data to correct device
             data, target = data.to(device), target.to(device)
             data = data.view(data.shape[0], -1)
+            # print(data)
+            # print(target)
 
             # Reset gradients
             optimizer.zero_grad()
@@ -494,7 +948,13 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
             output = model(data)
 
             # Compute loss
-            loss_ce = loss_fn(output, target)
+            if model.config.C == 2:
+                class_probs = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
+                # class_probs = class_probs.gather(1, target.reshape(-1, 1)).flatten()
+                loss_ce = loss_fn(class_probs, target)
+            else:
+                loss_ce = loss_fn(output, target)
+
             loss_nll = -output.sum() / (data.shape[0] * n_features)
 
             loss = (1 - lmbda) * loss_nll + lmbda * loss_ce
@@ -502,6 +962,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
             # Backprop
             loss.backward()
             optimizer.step()
+            # print([p for p in model.parameters()])
 
             epoch_loss += loss.item()
             epoch_loss_ce += loss_ce.item()
@@ -513,6 +974,8 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
             running_loss_nll += loss_nll.item()
 
             if batch_index % log_interval == (log_interval - 1):
+                if model.config.C == 2:
+                    target = target.argmax(dim=1)
                 pred = output.argmax(1).eq(target).sum().cpu().numpy() / data.shape[0] * 100
                 print(
                     "Train Epoch: {} [{: >5}/{: <5} ({:.0f}%)]\tLoss_ce: {:.6f}\tLoss_nll: {:.6f}\tAccuracy: {:.0f}%".format(
@@ -531,7 +994,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
                 running_loss_nll = 0.0
 
         with torch.no_grad():
-            if not (training_dataset == 'cifar' or training_dataset == 'svhn'):
+            if (training_dataset == 'mnist' or training_dataset == 'fmnist'):
                 set_seed(0)
                 samples = model.sample(class_index=list(range(10)) * 5)
                 save_samples(samples, iteration=epoch)
@@ -562,6 +1025,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
                 'loss_ce': loss_ce,
                 'loss_nll': loss_nll,
                 'lmbda': lmbda,
+                'lr': lr,
             }, d + 'model/checkpoint.tar')
 
 
@@ -574,6 +1038,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
         'loss_ce': loss_ce,
         'loss_nll': loss_nll,
         'lmbda': lmbda,
+        'lr': lr,
     }, d + 'model/checkpoint.tar')
 
     train_lls, class_probs_train, train_lls_sup, train_lls_unsup, train_loss_ce_final, train_loss_nll_final = evaluate_model(model, device, train_loader, "Train", output_dir=d)
@@ -587,6 +1052,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     training_curves_data = {"training_loss":loss_epoch, "training_loss_ce":loss_ce_epoch, "training_loss_nll":loss_nll_epoch,
                             "test_loss":test_loss, "test_loss_ce":test_loss_ce, "test_loss_nll":test_loss_nll}
     plot_training_curves(training_curves_data, filename='loss_curves', title='Loss(es)', path=d_samples)
+
 
     if training_dataset == 'cifar':
         corruptions = ['brightness', 'contrast', 'defocus_blur', 'elastic_transform', 'fog', 'frost', 'gaussian_blur', 'gaussian_noise',
@@ -689,7 +1155,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     if training_dataset == 'mnist' and eval_rotation and eval_single_digit:
         degrees = [180, 150, 120, 90, 60, 30, 0, 330, 300, 270, 240, 210]
 
-        for class_idx in range(10):
+        for class_idx in range(model.config.C):
             results_dict = {}
             print("Evaluate by rotating digits, for each class separately: class {}".format(class_idx))
             for deg in degrees:
@@ -723,7 +1189,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     other_mnist_train_lls, other_mnist_test_lls, other_class_probs_train, other_class_probs_test, other_mnist_train_lls_sup, other_mnist_train_lls_unsup, other_mnist_test_lls_sup, other_mnist_test_lls_unsup = get_other_lls(model, device, d, use_cuda, batch_size, training_dataset=training_dataset)
     print("OTHER Train class entropy: {} OTHER Test class entropy: {}".format(entropy(other_class_probs_train, axis=1).sum(), entropy(other_class_probs_test, axis=1).sum()))
 
-    lls_dict = {"train_lls":train_lls, "test_lls":test_lls, "other_train_lls":other_mnist_train_lls, "other_test_lls":other_mnist_test_lls}
+    lls_dict = {"train_lls": train_lls, "test_lls": test_lls, "other_train_lls": other_mnist_train_lls, "other_test_lls":other_mnist_test_lls}
     head_lls_dict_sup = {"train_lls_sup":train_lls_sup, "test_lls_sup":test_lls_sup, "other_train_lls_sup":other_mnist_train_lls_sup, "other_test_lls_sup":other_mnist_test_lls_sup}
     head_lls_dict_unsup = {"train_lls_unsup":train_lls_unsup, "test_lls_unsup":test_lls_unsup, "other_train_unsup":other_mnist_train_lls_unsup, "other_test_unsup":other_mnist_test_lls_unsup}
     class_probs_dict = {"class_probs_train":class_probs_train.max(axis=1), "class_probs_test":class_probs_test.max(axis=1), "other_class_probs_train":other_class_probs_train.max(axis=1), "other_class_probs_test":other_class_probs_test.max(axis=1)}
@@ -738,6 +1204,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
     for k, v in lls_dict.items():
         np.save(d_likelihoods + k, v)
+        print(np.array(v).mean())
     for k, v in head_lls_dict_sup.items():
         np.save(d_likelihoods + k, v)
     for k, v in head_lls_dict_unsup.items():
@@ -779,6 +1246,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
     for k, v in dropout_lls_dict.items():
         np.save(d_likelihoods + k, v)
+        print(np.array(v).mean())
     for k, v in dropout_head_lls_dict_sup.items():
         np.save(d_likelihoods + k, v)
     for k, v in dropout_head_lls_dict_unsup.items():
@@ -816,19 +1284,37 @@ def evaluate_model(model: torch.nn.Module, device, loader, tag, output_dir="") -
     data_ll = []
     data_ll_super = [] # pick it from the label-th head
     data_ll_unsup = [] # pick the max one
-    class_probs = torch.zeros((get_data_flatten_shape(loader)[0],10)).to(device)
+    class_probs = torch.zeros((get_data_flatten_shape(loader)[0], model.config.C)).to(device)
     correct = 0
-    criterion = nn.CrossEntropyLoss(reduction="sum")
+
+    if model.config.C == 2:
+        criterion = nn.BCELoss(reduction="sum")
+    else:
+        criterion = nn.CrossEntropyLoss(reduction="sum")
+    # criterion = nn.NLLLoss(reduction="sum")
+
     with torch.no_grad():
         for batch_index, (data, target) in enumerate(loader):
             data, target = data.to(device), target.to(device)
+            #print(target)
             data = data.view(data.shape[0], -1)
             output = model(data)
+
+            # sum up batch loss
+            if model.config.C == 2:
+                c_probs = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
+                c_probs = c_probs.gather(1, target.reshape(-1, 1)).flatten()
+                loss_ce += criterion(c_probs, target.float()).item()
+            else:
+                loss_ce += criterion(output, target).item()
+
+
+
             data_ll.extend(torch.logsumexp(output, dim=1).detach().cpu().numpy())
             data_ll_unsup.extend(output.max(dim=1)[0].detach().cpu().numpy())
-            data_ll_super.extend(output.gather(1, target.reshape(-1,1)).squeeze().detach().cpu().numpy())
+            data_ll_super.extend(output.gather(1, target.reshape(-1, 1)).squeeze().detach().cpu().numpy())
             class_probs[batch_index * loader.batch_size: (batch_index+1)*loader.batch_size, :] = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
-            loss_ce += criterion(output, target).item()  # sum up batch loss
+
             loss_nll += -output.sum()
             pred = output.argmax(dim=1)
             correct += (pred == target).sum().item()
@@ -868,27 +1354,31 @@ def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_
     data_ll_super = [] # pick it from the label-th head
     data_ll_unsup = [] # pick the max one
     data_ll = []
-    dropout_data_lls = torch.zeros(get_data_flatten_shape(loader)[0], 10, n_dropout_iters).to(device)
+    dropout_data_lls = torch.zeros(get_data_flatten_shape(loader)[0], model.config.C, n_dropout_iters).to(device)
     n_dropout_iters = n_dropout_iters
-    class_probs = torch.zeros((get_data_flatten_shape(loader)[0], 10, n_dropout_iters)).to(device)
+    class_probs = torch.zeros((get_data_flatten_shape(loader)[0], model.config.C, n_dropout_iters)).to(device)
     loss_nll = [0] * n_dropout_iters
     drop_corrects = 0
     loss_ce = [0] * n_dropout_iters
-    criterion = nn.CrossEntropyLoss(reduction="sum") #TODO NOTE same as cross_entropy_loss_with_logits in this case?
+    # criterion = nn.CrossEntropyLoss(reduction="sum") #TODO NOTE same as cross_entropy_loss_with_logits in this case?
+    criterion = nn.NLLLoss(reduction="sum")
     with torch.no_grad():
         for batch_index, (data, target) in enumerate(loader):
             data, target = data.to(device), target.to(device)
             data = data.view(data.shape[0], -1)
             data_ll_it = torch.zeros(data.shape[0]).to(device)
             data_ll_it_sq = torch.zeros(data.shape[0], n_dropout_iters).to(device)
-            data_ll_it_heads = torch.zeros(data.shape[0], 10, n_dropout_iters).to(device)
+            data_ll_it_heads = torch.zeros(data.shape[0], model.config.C, n_dropout_iters).to(device)
             for i in range(n_dropout_iters):
+                #print(i)
                 output = model(data, test_dropout=True, dropout_inference=dropout_inference)
+                cprobs = output - torch.logsumexp(output, dim=1, keepdims=True)
+                #print(output)
                 data_ll_it += torch.logsumexp(output, dim=1)
                 data_ll_it_sq[:, i] = torch.logsumexp(output, dim=1)
                 data_ll_it_heads[:, :, i] = output
                 class_probs[batch_index * loader.batch_size: (batch_index+1)*loader.batch_size, :, i] = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
-                loss_ce[i] += criterion(output, target).item()  # sum up batch loss
+                loss_ce[i] += criterion(cprobs, target).item()  # sum up batch loss
                 loss_nll[i] += -output.sum().cpu()
 
                 if batch_index == len(loader) - 1:
@@ -904,6 +1394,7 @@ def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_
             data_ll.extend(data_ll_it_sq.mean(dim=1).detach().cpu().numpy())
             data_ll_super.extend(data_ll_it_heads.mean(dim=2).gather(1, target.reshape(-1,1)).squeeze().detach().cpu().numpy())
             data_ll_unsup.extend(data_ll_it_heads.mean(dim=2).max(dim=1)[0].detach().cpu().numpy())
+            #breakpoint()
 
     loss_ce = np.array(loss_ce)
     loss_nll = np.array(loss_nll)
@@ -940,8 +1431,8 @@ def evaluate_model_corrupted_digits(model: torch.nn.Module, device, loader, tag,
     dataset = datasets.MNIST(root='../data', train=False, download=True, transform=None)
 
     kwargs = {}
-    if severity is not None: kwargs = {'severity':severity}
-    # apply corruptiona
+    if severity is not None: kwargs = {'severity': severity}
+    # apply corruption
     corrupted_images = np.empty((len(dataset), 28, 28), dtype=np.uint8)
     for i in range(len(dataset)):
         corrupted_images[i] = round_and_astype(np.array(corruption(dataset[i][0], **kwargs)))
@@ -952,7 +1443,7 @@ def evaluate_model_corrupted_digits(model: torch.nn.Module, device, loader, tag,
         targets = torch.tensor(corrupted_dataset.targets.clone().detach())
         target_idx = (targets == class_label).nonzero()
         sampler = torch.utils.data.sampler.SubsetRandomSampler(target_idx.reshape((-1,)))
-        data_loader = torch.utils.data.DataLoader(corrputed_dataset, batch_size=100, shuffle=False, sampler=sampler)
+        data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False, sampler=sampler)
     else:
         data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False)
 
@@ -963,11 +1454,11 @@ def evaluate_model_corrupted_digits(model: torch.nn.Module, device, loader, tag,
         if dropout_inference == 0.0:
             n_dropout_iters = 1
 
-        class_probs = torch.zeros(data_loader.dataset.data.shape[0], 10).to(device)
+        class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
 
-        dropout_output = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
-        dropout_class_probs = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
-        dropout_softmax_output = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
+        dropout_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_softmax_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
 
         n_correct = 0
         n_samples = 0
@@ -1051,7 +1542,7 @@ def evaluate_model_corrupted_cifar(model: torch.nn.Module, device, loader, tag, 
         targets = torch.tensor(corrupted_dataset.targets.clone().detach())
         target_idx = (targets == class_label).nonzero()
         sampler = torch.utils.data.sampler.SubsetRandomSampler(target_idx.reshape((-1,)))
-        data_loader = torch.utils.data.DataLoader(corrputed_dataset, batch_size=100, shuffle=False, sampler=sampler)
+        data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False, sampler=sampler)
     else:
         data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False)
 
@@ -1063,11 +1554,11 @@ def evaluate_model_corrupted_cifar(model: torch.nn.Module, device, loader, tag, 
         if dropout_inference == 0.0:
             n_dropout_iters = 1
 
-        class_probs = torch.zeros(data_loader.dataset.data.shape[0], 10).to(device)
+        class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
 
-        dropout_output = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
-        dropout_class_probs = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
-        dropout_softmax_output = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
+        dropout_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_softmax_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
 
         n_correct = 0
         n_samples = 0
@@ -1151,11 +1642,11 @@ def evaluate_model_rotated_digits(model: torch.nn.Module, device, loader, tag, d
         if dropout_inference == 0.0:
             n_dropout_iters = 1
 
-        class_probs = torch.zeros(data_loader.dataset.data.shape[0], 10).to(device)
+        class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
 
-        dropout_output = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
-        dropout_class_probs = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
-        dropout_softmax_output = torch.zeros(data_loader.dataset.data.shape[0], 10, n_dropout_iters).to(device)
+        dropout_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_softmax_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
 
         n_correct = 0
         n_samples = 0
@@ -1381,12 +1872,103 @@ if __name__ == "__main__":
     torch.cuda.benchmark = True
     set_seed(0)
 
-    corrupted_cifar_dir='/home/fabrizio/research/CIFAR-10-C/'
+    corrupted_cifar_dir = '/home/fabrizio/research/CIFAR-10-C/'
+
+    # torch.autograd.set_detect_anomaly(True)
+    # plot_sum_weights(model_dir='results/2022-06-02_23-13-30/model/', training_dataset='fmnist',
+    #               dropout_inference=0.2, n_mcd_passes=100)
+    # post_hoc_exps(model_dir='results/2022-06-02_23-13-30/model/', training_dataset='fmnist',
+    #               dropout_inference=[0.2], n_mcd_passes=[10])
+    # post_hoc_exps(model_dir='results/2022-05-15_00-45-40/model/', training_dataset='svhn',
+    #                dropout_inference=[0.2], n_mcd_passes=[100])
 
     run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
               training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
-              eval_every_n_epochs=5)
+              eval_rotation=True, mnist_corruptions=True, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+              training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    # run_torch(5, 200, dropout_inference=0.2, dropout_spn=0.0,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
+
+    # run_torch(5, 200, dropout_inference=0.9, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(100, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.8, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.8, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='fmnist', lmbda=0.8, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='fmnist', lmbda=0.6, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='fmnist', lmbda=0.4, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='fmnist', lmbda=0.2, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='fmnist', lmbda=0.1, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='fmnist', lmbda=0.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
     # run_torch(3, 200, dropout_inference=0.2, dropout_spn=0.2,
     #           training_dataset='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=True,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=20, corrupted_cifar_dir=corrupted_cifar_dir)
