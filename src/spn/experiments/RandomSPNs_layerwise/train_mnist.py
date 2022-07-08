@@ -14,6 +14,7 @@ from torchvision import datasets, transforms
 from spn.experiments.RandomSPNs_layerwise.distributions import RatNormal
 from spn.experiments.RandomSPNs_layerwise.rat_spn import RatSpn, RatSpnConfig
 from spn.algorithms.layerwise.layers import CrossProduct, Sum
+from spn.algorithms.layerwise.distributions import Bernoulli
 
 import matplotlib.pyplot as plt
 import matplotlib
@@ -27,6 +28,96 @@ from scipy.stats import entropy
 
 import spn.experiments.RandomSPNs_layerwise.mnist_c.corruptions as corruptions
 from sklearn import datasets as sk_datasets
+
+import csv
+import subprocess
+
+def maybe_download_debd():
+    if os.path.isdir('../data/debd'):
+        return
+    subprocess.run(['git', 'clone', 'https://github.com/arranger1044/DEBD', '../data/debd'])
+    wd = os.getcwd()
+    os.chdir('../data/debd')
+    subprocess.run(['git', 'checkout', '80a4906dcf3b3463370f904efa42c21e8295e85c'])
+    subprocess.run(['rm', '-rf', '.git'])
+    os.chdir(wd)
+
+
+def load_debd(name, dtype='int32'):
+    """Load one of the twenty binary density esimtation benchmark datasets."""
+
+    maybe_download_debd()
+
+    data_dir = '../data/debd'
+
+    train_path = os.path.join(data_dir, 'datasets', name, name + '.train.data')
+    test_path = os.path.join(data_dir, 'datasets', name, name + '.test.data')
+    valid_path = os.path.join(data_dir, 'datasets', name, name + '.valid.data')
+
+    reader = csv.reader(open(train_path, 'r'), delimiter=',')
+    train_x = np.array(list(reader)).astype(dtype)
+
+    reader = csv.reader(open(test_path, 'r'), delimiter=',')
+    test_x = np.array(list(reader)).astype(dtype)
+
+    reader = csv.reader(open(valid_path, 'r'), delimiter=',')
+    valid_x = np.array(list(reader)).astype(dtype)
+
+    return train_x, test_x, valid_x
+
+
+DEBD = ['accidents', 'ad', 'baudio', 'bbc', 'bnetflix', 'book', 'c20ng', 'cr52', 'cwebkb', 'dna', 'jester', 'kdd',
+        'kosarek', 'moviereview', 'msnbc', 'msweb', 'nltcs', 'plants', 'pumsb_star', 'tmovie', 'tretail', 'voting']
+
+DEBD_shapes = {
+    'accidents': dict(train=(12758, 111), valid=(2551, 111), test=(1700, 111)),
+    'ad': dict(train=(2461, 1556), valid=(491, 1556), test=(327, 1556)),
+    'baudio': dict(train=(15000, 100), valid=(3000, 100), test=(2000, 100)),
+    'bbc': dict(train=(1670, 1058), valid=(330, 1058), test=(225, 1058)),
+    'bnetflix': dict(train=(15000, 100), valid=(3000, 100), test=(2000, 100)),
+    'book': dict(train=(8700, 500), valid=(1739, 500), test=(1159, 500)),
+    'c20ng': dict(train=(11293, 910), valid=(3764, 910), test=(3764, 910)),
+    'cr52': dict(train=(6532, 889), valid=(1540, 889), test=(1028, 889)),
+    'cwebkb': dict(train=(2803, 839), valid=(838, 839), test=(558, 839)),
+    'dna': dict(train=(1600, 180), valid=(1186, 180), test=(400, 180)),
+    'jester': dict(train=(9000, 100), valid=(4116, 100), test=(1000, 100)),
+    'kdd': dict(train=(180092, 64), valid=(34955, 64), test=(19907, 64)),
+    'kosarek': dict(train=(33375, 190), valid=(6675, 190), test=(4450, 190)),
+    'moviereview': dict(train=(1600, 1001), valid=(250, 1001), test=(150, 1001)),
+    'msnbc': dict(train=(291326, 17), valid=(58265, 17), test=(38843, 17)),
+    'msweb': dict(train=(29441, 294), valid=(5000, 294), test=(3270, 294)),
+    'nltcs': dict(train=(16181, 16), valid=(3236, 16), test=(2157, 16)),
+    'plants': dict(train=(17412, 69), valid=(3482, 69), test=(2321, 69)),
+    'pumsb_star': dict(train=(12262, 163), valid=(2452, 163), test=(1635, 163)),
+    'tmovie': dict(train=(4524, 500), valid=(591, 500), test=(1002, 500)),
+    'tretail': dict(train=(22041, 135), valid=(4408, 135), test=(2938, 135)),
+    'voting': dict(train=(1214, 1359), valid=(350, 1359), test=(200, 1359)),
+}
+
+DEBD_display_name = {
+    'accidents': 'accidents',
+    'ad': 'ad',
+    'baudio': 'audio',
+    'bbc': 'bbc',
+    'bnetflix': 'netflix',
+    'book': 'book',
+    'c20ng': '20ng',
+    'cr52': 'reuters-52',
+    'cwebkb': 'web-kb',
+    'dna': 'dna',
+    'jester': 'jester',
+    'kdd': 'kdd-2k',
+    'kosarek': 'kosarek',
+    'moviereview': 'moviereview',
+    'msnbc': 'msnbc',
+    'msweb': 'msweb',
+    'nltcs': 'nltcs',
+    'plants': 'plants',
+    'pumsb_star': 'pumsb-star',
+    'tmovie': 'each-movie',
+    'tretail': 'retail',
+    'voting': 'voting'}
+
 
 class CustomTensorDataset(Dataset):
     """TensorDataset with support of transforms.
@@ -444,6 +535,88 @@ def get_cifar_loaders(use_cuda, device, batch_size):
     )
     return cifar10_train_loader, cifar10_test_loader
 
+def get_nltcs_loaders(use_cuda, device, batch_size):
+    """
+    Get the NLTCS pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    test_batch_size = batch_size
+
+    train, test, valid = load_debd('nltcs')
+    print(train.shape)
+    print(train[:, :15].shape)
+
+    training_set = Simple2dTensorDataset(
+        tensors=[torch.tensor(train[:, :15], dtype=torch.float32), torch.tensor(train[:, 15], dtype=torch.int64)])
+    test_set = Simple2dTensorDataset(
+        tensors=[torch.tensor(test[:, :15], dtype=torch.float32), torch.tensor(test[:, 15], dtype=torch.int64)])
+
+    assert batch_size <= train.shape[0]
+
+    # Train data loader
+    train_loader = torch.utils.data.DataLoader(
+        training_set,
+        batch_size=batch_size,
+        shuffle=True,
+        **kwargs,
+    )
+
+    assert batch_size <= test.shape[0]
+
+    # Test data loader
+    test_loader = torch.utils.data.DataLoader(
+        test_set,
+        batch_size=test_batch_size,
+        shuffle=False,
+        **kwargs,
+    )
+    return train_loader, test_loader
+
+def get_msnbc_loaders(use_cuda, device, batch_size):
+    """
+    Get the MSNBC pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    test_batch_size = batch_size
+
+    train, test, valid = load_debd('msnbc')
+
+    training_set = Simple2dTensorDataset(
+        tensors=[torch.tensor(train[:, :15], dtype=torch.float32), torch.tensor(train[:, 15], dtype=torch.int64)])
+    test_set = Simple2dTensorDataset(
+        tensors=[torch.tensor(test[:, :15], dtype=torch.float32), torch.tensor(test[:, 15], dtype=torch.int64)])
+
+    assert batch_size <= train.shape[0]
+
+    # Train data loader
+    train_loader = torch.utils.data.DataLoader(
+        training_set,
+        batch_size=batch_size,
+        shuffle=True,
+        **kwargs,
+    )
+
+    assert batch_size <= test.shape[0]
+
+    # Test data loader
+    test_loader = torch.utils.data.DataLoader(
+        test_set,
+        batch_size=test_batch_size,
+        shuffle=False,
+        **kwargs,
+    )
+    return train_loader, test_loader
+
 def get_svhn_loaders(use_cuda, device, batch_size, add_extra=True):
     """
     Get the SVHN pytorch data loader.
@@ -497,6 +670,10 @@ def get_data_loaders(use_cuda, device, batch_size, dataset='mnist'):
         return get_2gaussians_loaders(use_cuda, device, batch_size, n_samples=1000)
     elif dataset == '4gaussians':
         return get_4gaussians_loaders(use_cuda, device, batch_size, n_samples=100)
+    elif dataset == 'nltcs':
+        return get_nltcs_loaders(use_cuda, device, batch_size)
+    elif dataset == 'msnbc':
+        return get_msnbc_loaders(use_cuda, device, batch_size)
 
 
 def get_data_flatten_shape(data_loader):
@@ -507,8 +684,9 @@ def get_data_flatten_shape(data_loader):
             torch.prod(torch.tensor(data_loader.dataset.data.shape[1:])).int().item())
 
 
-def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10) -> RatSpn:
+def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10, leaf_distribution=RatNormal) -> RatSpn:
     """Construct the RatSpn"""
+    print(leaf_distribution)
 
     # Setup RatSpnConfig
     config = RatSpnConfig()
@@ -519,7 +697,7 @@ def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10) -> RatSpn:
     config.S = S
     config.C = C
     config.dropout = dropout
-    config.leaf_base_class = RatNormal
+    config.leaf_base_class = leaf_distribution
     config.leaf_base_kwargs = {}
     #config.leaf_base_kwargs = {"min_sigma": 0.1, "max_sigma": 2.0}
     #config.leaf_base_kwargs = {"min_sigma": 0.1, "max_sigma": 2.0, "min_mean": -1., "max_mean": 7.}
@@ -534,6 +712,20 @@ def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10) -> RatSpn:
     print("Dropout SPN: ", dropout)
     return model
 
+def get_dataset_display_name(dataset_name):
+    display_names = {}
+    display_names['fmnist'] = 'F-MNIST'
+    display_names['mnist'] = 'MNIST'
+    display_names['kmnist'] = 'K-MNIST'
+    display_names['emnist'] = 'E-MNIST'
+    display_names['cifar'] = 'CIFAR'
+    display_names['svhn'] = 'SVHN'
+    display_names['2moons'] = '2 moons'
+    display_names['2gaussians'] = '2 gaussians'
+    display_names['4guassians'] = '4 gaussians'
+    display_names['nltcs'] = 'NLTCS'
+    display_names['msnbc'] = 'MSNBC'
+    return display_names[dataset_name]
 
 def get_other_dataset_name(training_dataset):
     if training_dataset == 'mnist':
@@ -554,8 +746,11 @@ def get_other_dataset_name(training_dataset):
         return '2moons'
     elif training_dataset == '4gaussians':
         return '2moons'
+    elif training_dataset == 'nltcs':
+        return 'msnbc'
 
-def plot_sum_weights(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512, rat_S=20, rat_I=20, rat_D=5, rat_R=5):
+def plot_sum_weights(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512,
+                     rat_S=20, rat_I=20, rat_D=5, rat_R=5):
     import pandas as pd
     import seaborn as sns
 
@@ -568,7 +763,15 @@ def plot_sum_weights(model_dir=None, training_dataset=None, dropout_inference=No
     ensure_dir(d)
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
     n_features = get_data_flatten_shape(train_loader)[1]
-    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_inference, F=n_features)
+    if training_dataset in DEBD:
+        leaves = Bernoulli
+        rat_C = 2
+    else:
+        leaves = RatNormal
+        rat_C = 10
+    print(leaves)
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_inference, F=n_features,
+                     C=rat_C, leaf_distribution=leaves)
     print(model)
 
     checkpoint = torch.load(model_dir + 'checkpoint.tar')
@@ -620,7 +823,8 @@ def plot_sum_weights(model_dir=None, training_dataset=None, dropout_inference=No
 
 
 
-def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512, rat_S=20, rat_I=20, rat_D=5, rat_R=5):
+def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512,
+                  rat_S=20, rat_I=20, rat_D=5, rat_R=5):
     import pandas as pd
     import seaborn as sns
 
@@ -633,12 +837,19 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
     ensure_dir(d)
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
     n_features = get_data_flatten_shape(train_loader)[1]
-    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_inference[0], F=n_features)
+    if training_dataset in DEBD:
+        leaves = Bernoulli
+        rat_C = 2
+    else:
+        leaves = RatNormal
+        rat_C = 10
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_inference[0], F=n_features,
+                     C=rat_C, leaf_distribution=leaves)
 
-    # checkpoint = torch.load(model_dir + 'checkpoint.tar')
-    # model.load_state_dict(checkpoint['model_state_dict'])
+    checkpoint = torch.load(model_dir + 'checkpoint.tar')
+    model.load_state_dict(checkpoint['model_state_dict'])
     # old models
-    model.load_state_dict(torch.load(model_dir + 'model.pt'))
+    # model.load_state_dict(torch.load(model_dir + 'model.pt'))
     model.eval()
 
     if isinstance(dropout_inference, float):
@@ -658,38 +869,49 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
             train_lls, class_probs_train, train_lls_sup, train_lls_unsup, train_ce, train_nll = evaluate_model(model, device, train_loader, "Train", output_dir=d)
             np.save(d + 'train_lls', train_lls)
             np.save(d + 'train_nll', train_nll.cpu().numpy())
+            print(np.average(train_lls))
+
             test_lls, class_probs_test, test_lls_sup, test_lls_unsup, test_ce, test_nll = evaluate_model(model, device, test_loader, "Test", output_dir=d)
             np.save(d + 'test_lls', test_lls)
             np.save(d + 'test_nll', test_nll.cpu().numpy())
+            print(np.average(test_lls))
+
             other_mnist_train_lls, other_mnist_test_lls, other_class_probs_train, other_class_probs_test, other_mnist_train_lls_sup, other_mnist_train_lls_unsup, other_mnist_test_lls_sup, other_mnist_test_lls_unsup = get_other_lls(model, device, d, use_cuda, batch_size, training_dataset=training_dataset)
             np.save(d + 'other_train_lls', other_mnist_train_lls)
             np.save(d + 'other_test_lls', other_mnist_test_lls)
+            print(np.average(other_mnist_train_lls))
+            print(np.average(other_mnist_test_lls))
+
+
 
             lls_dict = {"train_lls":train_lls, "test_lls":test_lls, "other_mnist_train_lls":other_mnist_train_lls, "other_mnist_test_lls":other_mnist_test_lls}
             head_lls_dict_sup = {"train_lls_sup":train_lls_sup, "test_lls_sup":test_lls_sup, "other_mnist_train_lls_sup":other_mnist_train_lls_sup, "other_mnist_test_lls_sup":other_mnist_test_lls_sup}
             head_lls_dict_unsup = {"train_lls_unsup":train_lls_unsup, "test_lls_unsup":test_lls_unsup, "other_mnist_train_unsup":other_mnist_train_lls_unsup, "other_mnist_test_unsup":other_mnist_test_lls_unsup}
 
 
-            train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop, train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+            train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop,train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
             np.save(d + 'drop_train_lls', train_lls_dropout)
-            np.save(d + 'drop_train_nll', train_lls_dropout_heads.cpu().numpy())
+            np.save(d + 'drop_train_nll', train_lls_dropout_heads)
+            print(np.average(train_lls_dropout))
             test_lls_dropout, class_probs_test_dropout, test_lls_sup_drop, test_lls_unsup_drop, test_lls_dropout_heads = evaluate_model_dropout(model, device, test_loader, "Test DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
             np.save(d + 'drop_test_lls', test_lls_dropout)
-            np.save(d + 'drop_test_nll', test_lls_dropout_heads.cpu().numpy())
+            np.save(d + 'drop_test_nll', test_lls_dropout_heads)
+            print(np.average(test_lls_dropout))
 
             other_train_loader, other_test_loader = get_data_loaders(use_cuda=use_cuda, device=device, batch_size=batch_size, dataset=get_other_dataset_name(training_dataset))
             other_train_lls_dropout, other_class_probs_train_dropout, other_train_lls_sup_drop, other_train_lls_unsup_drop, other_train_lls_dropout_heads = evaluate_model_dropout(model, device, other_train_loader, "Other Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
             np.save(d + 'drop_other_train_lls', other_train_lls_dropout)
-            np.save(d + 'drop_other_train_nll', other_train_lls_dropout_heads.cpu().numpy())
+            np.save(d + 'drop_other_train_nll', other_train_lls_dropout_heads)
+            print(np.average(other_train_lls_dropout))
             other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop, other_test_lls_dropout_heads = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
             np.save(d + 'drop_other_test_lls', other_test_lls_dropout)
-            np.save(d + 'drop_other_test_nll', other_test_lls_dropout_heads.cpu().numpy())
+            np.save(d + 'drop_other_test_nll', other_test_lls_dropout_heads)
+            print(np.average(other_test_lls_dropout))
+
 
             dropout_lls_dict = {"drop_train_lls":train_lls_dropout, "drop_test_lls":test_lls_dropout, "drop_other_mnist_train_lls":other_train_lls_dropout, "drop_other_mnist_test_lls":other_test_lls_dropout}
             dropout_head_lls_dict_sup = {"drop_train_lls_sup":train_lls_sup_drop, "drop_test_lls_sup":test_lls_sup_drop, "drop_other_mnist_train_lls_sup":other_train_lls_sup_drop, "drop_other_mnist_test_lls_sup":other_test_lls_sup_drop}
             dropout_head_lls_dict_unsup = {"drop_train_lls_unsup":train_lls_unsup_drop, "drop_test_lls_unsup":test_lls_unsup_drop, "drop_other_mnist_train_lls_unsup":other_train_lls_unsup_drop, "drop_other_mnist_test_lls_unsup":other_test_lls_unsup_drop}
-            breakpoint()
-
 
 
 
@@ -701,7 +923,7 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
                              max(test_lls_dropout), max(other_test_lls_dropout))
             # print(x_lim_left, x_lim_right)
             y_lim_left = 0.0
-            y_lim_right = 0.06
+            y_lim_right = 0.3 # 0.06
             # lls_in_domain_train = np.load(d_results + 'train_lls.npy')
             # lls_in_domain_test = np.load(d_results + 'test_lls.npy')
             # # other_train_lls = np.load(d_results + 'other_mnist_train_lls.npy')
@@ -715,16 +937,21 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
             df_ood_test = pd.DataFrame({'other_test_lls': other_mnist_test_lls})
 
             data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
-            data = data.rename({0: 'F-MNIST Train (In-domain)', 1: 'F-MNIST Test (In-domain)', 2: 'MNIST Test (OOD)'}, axis=1)
+            data = data.rename({0: '{} Train (In-domain)'.format(get_dataset_display_name(training_dataset)),
+                                1: '{} Test (In-domain)'.format(get_dataset_display_name(training_dataset)),
+                                2: '{} Test (OOD)'.format(get_dataset_display_name(get_other_dataset_name(training_dataset)))},
+                               axis=1)
 
-            palette = {"F-MNIST Train (In-domain)": "yellow", "F-MNIST Test (In-domain)": "green", "MNIST Test (OOD)": "blue"}
+            palette = {"{} Train (In-domain)".format(get_dataset_display_name(training_dataset)): "yellow",
+                       "{} Test (In-domain)".format(get_dataset_display_name(training_dataset)): "green",
+                       "{} Test (OOD)".format(get_dataset_display_name(get_other_dataset_name(training_dataset=training_dataset))): "blue"}
             my_palette = palette
             # p3 = sns.histplot(data=data, x='value', hue='column',  bins=50, multiple='layer', kde=True)
             # p3 = sns.histplot(data=data, multiple='layer', stat="density", palette=palette, cbar_kws={'alpha':0.3})
             p3 = sns.histplot(data=data, stat="density", element="bars", common_norm=False, palette=my_palette)
             # p3 = sns.distplot(a=data, bins=20,  hist_kws={"alpha":0.2, "stat":"probability", "element":"step", "common_norm":False})
             # p3 = sns.distplot(df_melted,  bins=50)
-            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set(xlabel='Data LL', ylabel='proportion of samples')
             p3.set_xlim(x_lim_left, x_lim_right)
             # p3.set_ylim(y_lim_left, y_lim_right)
             p3.set_title("Probabilistic Circuit")
@@ -735,14 +962,14 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
             plt.close()
 
             p3 = sns.histplot(data=data, stat="probability", element="bars", common_norm=False, palette=my_palette)
-            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set(xlabel='Data LL', ylabel='proportion of samples')
             p3.set_xlim(x_lim_left, x_lim_right)
             p3.set_ylim(y_lim_left, y_lim_right)
             p3.set_title("Probabilistic Circuit")
             # p3.map(plt.hist, alpha=0.5)
             # p3 = sns.histplot(data=data, bins=20, multiple='layer')
             fig3 = p3.get_figure()
-            fig3.savefig(d + filename)
+            fig3.savefig(d + "pc_{}_passes_{}_".format(dropout_inference, n_mcd_passes) + filename)
             plt.close()
 
             # lls_in_domain_train = np.load(d_results + 'drop_train_lls.npy')
@@ -758,9 +985,13 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
             df_ood_test = pd.DataFrame({'other_test_lls': other_test_lls_dropout})
 
             data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
-            data = data.rename({0: 'F-MNIST Train (In-domain)', 1: 'F-MNIST Test (In-domain)', 2: 'MNIST Test (OOD)'}, axis=1)
+            data = data.rename({0: '{} Train (In-domain)'.format(get_dataset_display_name(training_dataset)),
+                                1: '{} Test (In-domain)'.format(get_dataset_display_name(training_dataset)),
+                                2: '{} Test (OOD)'.format(
+                                    get_dataset_display_name(get_other_dataset_name(training_dataset)))},
+                               axis=1)
             p3 = sns.histplot(data=data, stat="density", element="bars", common_norm=False, palette=my_palette)
-            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set(xlabel='Data LL', ylabel='proportion of samples')
             p3.set_xlim(x_lim_left, x_lim_right)
             # p3.set_ylim(y_lim_left, y_lim_right)
             p3.set_title("Dropout Circuit [p {} passes {}]".format(dropout_inference, n_mcd_passes))
@@ -770,7 +1001,7 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
             plt.close()
 
             p3 = sns.histplot(data=data, stat="probability", element="bars", common_norm=False, palette=my_palette)
-            p3.set(xlabel='Data LL', ylabel='perc. of samples')
+            p3.set(xlabel='Data LL', ylabel='proportion of samples')
             p3.set_xlim(x_lim_left, x_lim_right)
             p3.set_ylim(y_lim_left, y_lim_right)
             p3.set_title("Dropout Circuit [p {} passes {}]".format(dropout_inference, n_mcd_passes))
@@ -867,16 +1098,25 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
     if toy_setting:
         rat_S, rat_I, rat_D, rat_R, rat_C = 2, 4, 2, 1, 10
+        if training_dataset in DEBD:
+            leaves = Bernoulli
+            rat_C = 2
+        else:
+            leaves = RatNormal
+    elif training_dataset == 'nltcs' or training_dataset == 'msnbc':
+        rat_S, rat_I, rat_D, rat_R, rat_C, leaves = 2, 4, 2, 1, 2, Bernoulli
     elif training_dataset == '2moons' or training_dataset == '2gaussians' or training_dataset == '4gaussians':
-        rat_S, rat_I, rat_D, rat_R, rat_C = 4, 32, 2, 2, 2
-    elif training_dataset == 'cifar' or training_dataset == 'svhn':
-        rat_S, rat_I, rat_D, rat_R, rat_C = 30, 30, 5, 10, 10
+        rat_S, rat_I, rat_D, rat_R, rat_C, leaves = 4, 32, 2, 2, 2, RatNormal
+    elif training_dataset == 'cifar': # or training_dataset == 'svhn':
+        rat_S, rat_I, rat_D, rat_R, rat_C, leaves = 30, 30, 5, 10, 10, RatNormal
     else:
-        rat_S, rat_I, rat_D, rat_R, rat_C = 20, 20, 5, 5, 10
+        rat_S, rat_I, rat_D, rat_R, rat_C, leaves = 20, 20, 5, 5, 10, RatNormal
 
-    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_spn, F=n_features, C=rat_C)
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_spn, F=n_features, C=rat_C,
+                     leaf_distribution=leaves)
     model.train()
     print(model)
+    print(model._leaf.base_leaf)
     n_rat_params = count_params(model)
     print("Number of pytorch parameters: ", n_rat_params)
 
@@ -921,6 +1161,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
 
 
     for epoch in range(n_epochs):
+        model.train()
         t_start = time.time()
 
         running_loss = 0.0
@@ -1875,21 +2116,44 @@ if __name__ == "__main__":
     corrupted_cifar_dir = '/home/fabrizio/research/CIFAR-10-C/'
 
     # torch.autograd.set_detect_anomaly(True)
+
+    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+              training_dataset='nltcs', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+    # plot_sum_weights(model_dir='results/2022-07-04_15-09-25/model/', training_dataset='nltcs',
+    #                dropout_inference=0.2, n_mcd_passes=100, rat_S=2, rat_I=4, rat_D=2, rat_R=1)
+    # post_hoc_exps(model_dir='results/2022-07-04_15-09-25/model/', training_dataset='nltcs',
+    #                dropout_inference=[0.8], n_mcd_passes=[10], rat_S=2, rat_I=4, rat_D=2, rat_R=1)
+    # plot_sum_weights(model_dir='results/2022-07-01_19-36-52/model/', training_dataset='nltcs',
+    #                dropout_inference=0.2, n_mcd_passes=100, rat_S=2, rat_I=4, rat_D=2, rat_R=1)
+    # post_hoc_exps(model_dir='results/2022-07-01_19-36-52/model/', training_dataset='nltcs',
+    #                dropout_inference=[0.8], n_mcd_passes=[10], rat_S=2, rat_I=4, rat_D=2, rat_R=1)
+
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='4gaussians', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
+
     # plot_sum_weights(model_dir='results/2022-06-02_23-13-30/model/', training_dataset='fmnist',
     #               dropout_inference=0.2, n_mcd_passes=100)
     # post_hoc_exps(model_dir='results/2022-06-02_23-13-30/model/', training_dataset='fmnist',
-    #               dropout_inference=[0.2], n_mcd_passes=[10])
+    #               dropout_inference=[0.2], n_mcd_passes=[100])
     # post_hoc_exps(model_dir='results/2022-05-15_00-45-40/model/', training_dataset='svhn',
     #                dropout_inference=[0.2], n_mcd_passes=[100])
 
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
-              training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-              eval_rotation=True, mnist_corruptions=True, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
-              eval_every_n_epochs=5, lr=0.001)
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
-              training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
-              eval_every_n_epochs=5, lr=0.001)
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=True, mnist_corruptions=True, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
 
     # run_torch(5, 200, dropout_inference=0.2, dropout_spn=0.0,
     #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=True,

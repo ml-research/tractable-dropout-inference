@@ -139,10 +139,10 @@ class Leaf(AbstractLayer):
 
     def _apply_dropout(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0) -> torch.Tensor:
         # Apply dropout sampled from a bernoulli during training (model.train() has been called)
+
         if self.dropout > 0.0 and self.training:
             dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = 0.0
-            # print("*"*80)
             # print((x == 0.0).sum())
             # print(dropout_indices.sum())
             # assert(dropout_indices.sum() <=  (x == 0.0).sum())
