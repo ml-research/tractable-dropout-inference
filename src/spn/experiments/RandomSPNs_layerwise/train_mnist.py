@@ -821,6 +821,54 @@ def plot_sum_weights(model_dir=None, training_dataset=None, dropout_inference=No
             plt.close()
 
 
+def evaluate_corrupted_svhn(model_dir=None, dropout_inference=None, n_mcd_passes=100, batch_size=512,
+                  rat_S=20, rat_I=20, rat_D=5, rat_R=5, corrupted_svhn_dir=''):
+
+    from imagecorruptions import corrupt, get_corruption_names
+
+    import pandas as pd
+    import seaborn as sns
+
+    dev = sys.argv[1]
+    device = torch.device("cuda:0")
+    use_cuda = True
+    torch.cuda.benchmark = True
+
+    d = model_dir + "post_hoc_results/svhn_c/mcd_p_{}/".format(str(dropout_inference).replace('.', ''))
+    ensure_dir(d)
+    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device,
+                                                 dataset='svhn')
+    n_features = get_data_flatten_shape(train_loader)[1]
+    leaves = RatNormal
+    rat_C = 10
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_inference, F=n_features,
+                     C=rat_C, leaf_distribution=leaves)
+
+    # new models
+    # checkpoint = torch.load(model_dir + 'checkpoint.tar')
+    # model.load_state_dict(checkpoint['model_state_dict'])
+    # old models
+    model.load_state_dict(torch.load(model_dir + 'model.pt'))
+    model.eval()
+
+    results_dict = {}
+    for corruption in get_corruption_names('common'):
+        for cl in range(5):
+            cl += 1
+            print("Corruption {} Level {}".format(corruption, cl))
+            results_dict['c_{}_l{}'.format(corruption, cl)] = evaluate_model_corrupted_svhn(model, device, test_loader,
+                                                                                             "Test DROP corrupted SVHN C {} L {}".format(
+                                                                                                 corruption, cl),
+                                                                                             dropout_inference=dropout_inference,
+                                                                                             n_dropout_iters=n_mcd_passes,
+                                                                                             output_dir=d,
+                                                                                             corruption=corruption,
+                                                                                             corruption_level=cl,
+                                                                                             corrupted_svhn_dir=corrupted_svhn_dir)
+            np.save(d + 'dropout_class_probs_c_{}_l{}'.format(corruption, cl),
+                    results_dict['c_{}_l{}'.format(corruption, cl)][0].cpu().detach().numpy())
+            np.save(d + 'class_probs_c_{}_l{}'.format(corruption, cl),
+                    results_dict['c_{}_l{}'.format(corruption, cl)][1].cpu().detach().numpy())
 
 
 def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512,
@@ -1851,6 +1899,101 @@ def evaluate_model_corrupted_cifar(model: torch.nn.Module, device, loader, tag, 
 
         return dropout_class_probs, class_probs
 
+def evaluate_model_corrupted_svhn(model: torch.nn.Module, device, loader, tag, dropout_inference=0.01,
+                                  n_dropout_iters=100, output_dir="", corruption='fog', corruption_level=1,
+                                  class_label=None, corrupted_svhn_dir='') -> float:
+
+    d = output_dir
+    d_samples = d + "samples/"
+    d_model = d + "model/"
+    ensure_dir(d)
+    ensure_dir(d_samples)
+    ensure_dir(d_model)
+
+
+    corrupted_dataset = np.load(corrupted_svhn_dir + 'svhn_test_{}_l{}.npy'.format(corruption, corruption_level))
+    labels = np.load(corrupted_svhn_dir + 'svhn_test_{}_l{}_labels.npy'.format(corruption, corruption_level))
+    assert corrupted_dataset.shape[0] == labels.shape[0]
+    assert labels.shape[0] == 26032
+
+    model.eval()
+
+    svhn_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4377, 0.4438, 0.4728), (0.198, 0.201, 0.197))])
+
+    corrupted_dataset = CustomTensorDataset(tensors=[torch.tensor(corrupted_dataset), torch.tensor(labels)], transform=svhn_transformer)
+
+    if class_label is not None:
+        targets = torch.tensor(corrupted_dataset.targets.clone().detach())
+        target_idx = (targets == class_label).nonzero()
+        sampler = torch.utils.data.sampler.SubsetRandomSampler(target_idx.reshape((-1,)))
+        data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False, sampler=sampler)
+    else:
+        data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False)
+
+
+    n_samples = 0
+
+    with torch.no_grad():
+
+        if dropout_inference == 0.0:
+            n_dropout_iters = 1
+
+        class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
+
+        dropout_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_class_probs = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+        dropout_softmax_output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C, n_dropout_iters).to(device)
+
+        n_correct = 0
+        n_samples = 0
+
+
+        for batch_index, (data, target) in enumerate(data_loader):
+            data = data.to(device)
+            data = data.view(data.shape[0], -1)
+
+            n_samples += data.shape[0]
+
+            output = model(data, test_dropout=False, dropout_inference=0.0)
+            if batch_index == len(data_loader) - 1:
+                class_probs[batch_index * data_loader.batch_size: batch_index * data_loader.batch_size + output.shape[0] , :] = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
+                assert torch.all(torch.isclose(class_probs[batch_index * data_loader.batch_size: batch_index * data_loader.batch_size + output.shape[0], :].sum(-1), torch.tensor((1.)), atol=1e-03)), class_probs[batch_index * data_loader.batch_size:batch_index * data_loader.batch_size + output.shape[0], :].sum(-1)
+            else:
+                class_probs[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :] = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
+                assert torch.all(torch.isclose(class_probs[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :].sum(-1), torch.tensor((1.)), atol=1e-03)), class_probs[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :].sum(-1)
+
+            pred = output.argmax(dim=1)
+            n_correct += (pred == target.to(device)).sum().item()
+
+            for i in range(n_dropout_iters):
+                if batch_index == len(data_loader) - 1:
+                    dropout_output[batch_index * data_loader.batch_size: batch_index * data_loader.batch_size + output.shape[0], :, i] = model(data, test_dropout=True, dropout_inference=dropout_inference)
+
+                    dropout_class_probs[batch_index * data_loader.batch_size:batch_index * data_loader.batch_size + output.shape[0], :, i] = \
+                        (dropout_output[batch_index * data_loader.batch_size:batch_index * data_loader.batch_size + output.shape[0], :, i] - \
+                        torch.logsumexp(dropout_output[batch_index * data_loader.batch_size:batch_index * data_loader.batch_size + output.shape[0], :, i], dim=1, keepdims=True)).exp()
+                    assert torch.all(torch.isclose(dropout_class_probs[batch_index * data_loader.batch_size: batch_index * data_loader.batch_size + output.shape[0], :, i].sum(-1), torch.tensor((1.)), atol=1e-03)), dropout_class_probs[batch_index * data_loader.batch_size: batch_index * data_loader.batch_size + output.shape[0], :, i].sum(-1)
+                else:
+                    dropout_output[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :, i] = model(data, test_dropout=True, dropout_inference=dropout_inference)
+
+                    dropout_class_probs[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :, i] = \
+                        (dropout_output[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :, i] - \
+                        torch.logsumexp(dropout_output[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :, i], dim=1, keepdims=True)).exp()
+                    assert torch.all(torch.isclose(dropout_class_probs[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :, i].sum(-1), torch.tensor((1.)), atol=1e-03)), dropout_class_probs[batch_index * data_loader.batch_size: (batch_index+1)*data_loader.batch_size, :, i].sum(-1)
+
+        print("N of correct test predictions (w/o MCD): {}/{} ({}%)".format(n_correct, n_samples, (n_correct / n_samples)*100))
+
+        dropout_class_probs = dropout_class_probs[:n_samples, :, :]
+        class_probs = class_probs[:n_samples, :]
+
+        if class_label is not None:
+            drop_n_correct = (torch.argmax(torch.mean(dropout_class_probs, 2), dim=1) == class_label).sum()
+        else:
+            drop_n_correct = (torch.argmax(torch.mean(dropout_class_probs, 2), dim=1) == data_loader.dataset.targets.to(device)).sum()
+        print("N of correct test precictions with MCD: DROP N of correct predictions of test samples: {}/{} ({}%)".format(drop_n_correct, n_samples, (drop_n_correct / n_samples)*100))
+
+        return dropout_class_probs, class_probs
+
 def evaluate_model_rotated_digits(model: torch.nn.Module, device, loader, tag, dropout_inference=0.01, n_dropout_iters=100, output_dir="", degrees=30, class_label=None) -> float:
 
     d = output_dir
@@ -2114,13 +2257,19 @@ if __name__ == "__main__":
     set_seed(0)
 
     corrupted_cifar_dir = '/home/fabrizio/research/CIFAR-10-C/'
+    corrupted_svhn_dir = '/home/fabrizio/research/svhn_c/'
 
     # torch.autograd.set_detect_anomaly(True)
 
-    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
-              training_dataset='nltcs', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
-              eval_every_n_epochs=5, lr=0.001)
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='nltcs', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
+    # evaluate_corrupted_svhn(model_dir='results/2022-05-15_00-45-40/model/', dropout_inference=0.2,
+    #                         n_mcd_passes=100, corrupted_svhn_dir=corrupted_svhn_dir)
+    evaluate_corrupted_svhn(model_dir='results/2022-05-15_00-45-40/model/', dropout_inference=0.1,
+                            n_mcd_passes=100, corrupted_svhn_dir=corrupted_svhn_dir)
+
     # plot_sum_weights(model_dir='results/2022-07-04_15-09-25/model/', training_dataset='nltcs',
     #                dropout_inference=0.2, n_mcd_passes=100, rat_S=2, rat_I=4, rat_D=2, rat_R=1)
     # post_hoc_exps(model_dir='results/2022-07-04_15-09-25/model/', training_dataset='nltcs',
@@ -2191,35 +2340,70 @@ if __name__ == "__main__":
     #           eval_every_n_epochs=5)
 
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='mnist', lmbda=0.8, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='mnist', lmbda=0.6, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='mnist', lmbda=0.4, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='mnist', lmbda=0.2, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='mnist', lmbda=0.1, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
+    #           training_dataset='mnist', lmbda=0.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5)
+    #
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
     #           training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5)
-
+    #
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
     #           training_dataset='fmnist', lmbda=0.8, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5)
-
+    #
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
     #           training_dataset='fmnist', lmbda=0.6, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5)
-
+    #
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
     #           training_dataset='fmnist', lmbda=0.4, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5)
-
+    #
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
     #           training_dataset='fmnist', lmbda=0.2, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5)
-
+    #
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
     #           training_dataset='fmnist', lmbda=0.1, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5)
-
+    #
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.1,
     #           training_dataset='fmnist', lmbda=0.0, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=1, corrupted_cifar_dir=corrupted_cifar_dir,

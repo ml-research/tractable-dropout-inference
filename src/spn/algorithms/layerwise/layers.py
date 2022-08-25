@@ -81,7 +81,7 @@ class Sum(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.weights.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0):
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, fwd_passes=10):
         """
         Sum layer foward pass.
 
@@ -114,7 +114,6 @@ class Sum(AbstractLayer):
 
         # Apply dropout: Set random sum node children to 0 (-inf in log domain)
         # TODO change
-        #if self.dropout > 0.0 and self.training:
         if self.training and self.dropout > 0.0:
             dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             while torch.any(torch.all(dropout_indices, dim=2)):
@@ -124,14 +123,7 @@ class Sum(AbstractLayer):
             dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool() #NOTE not the most efficient way
             while torch.any(torch.all(dropout_indices, dim=2)):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
-            #print(dropout_indices.sum())
-            #print(dropout_indices.shape)
-            # breakpoint()
             x[dropout_indices] = np.NINF
-            # x_copy_2[torch.distributions.Bernoulli(probs=0.6).sample(x.shape).bool()] = np.NINF
-            #print(x)
-
-        dropped_x_copy = x.detach().clone()
 
         # Dimensions
         n, d, ic, r = x.size()

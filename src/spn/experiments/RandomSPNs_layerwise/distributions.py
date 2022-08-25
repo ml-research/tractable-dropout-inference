@@ -137,8 +137,6 @@ class IndependentMultivariate(Leaf):
         #     print('fwd leaves ', x)
         #     breakpoint()
 
-        # x = self._marginalize_input(x)
-        # x = self._apply_dropout(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
 
 
         if self._pad:
