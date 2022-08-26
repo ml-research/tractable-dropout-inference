@@ -12,6 +12,8 @@ from spn.algorithms.layerwise.type_checks import check_valid
 from spn.algorithms.layerwise.utils import provide_evidence, SamplingContext
 from spn.experiments.RandomSPNs_layerwise.distributions import IndependentMultivariate, RatNormal, truncated_normal_
 
+from icecream import ic
+
 logger = logging.getLogger(__name__)
 
 
@@ -147,7 +149,38 @@ class RatSpn(nn.Module):
 
         return x
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0) -> torch.Tensor:
+    def _forward_cf(self, x: torch.Tensor, dropout_inference):
+        x, vars = self._leaf(x, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+
+        x, vars = self._forward_layers_cf(x, vars, dropout_inference=dropout_inference)
+
+        # Merge results from the different repetitions into the channel dimension
+        n, d, c, r = x.size()
+        assert d == 1  # number of features should be 1 at this point
+        x = x.view(n, d, c * r, 1)
+
+        # Apply C sum node outputs
+        # do not apply dropout at the root node but propagate uncertainty estimations
+        x, vars = self.root(x, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False, vars=vars)
+        ic()
+
+        # Remove repetition dimension
+        x = x.squeeze(3)
+        vars = vars.squeeze(3)
+
+        # Remove in_features dimension
+        x = x.squeeze(1)
+        vars = vars.squeeze(1)
+
+        return x, vars
+
+    def _forward_layers_cf(self, x, vars, dropout_inference=0.0):
+        for layer in self._inner_layers:
+            ic(layer)
+            x, vars = layer(x, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=True, vars=vars)
+        return x, vars
+
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False) -> torch.Tensor:
         """
         Forward pass through RatSpn. Computes the conditional log-likelihood P(X | C).
 
@@ -160,8 +193,11 @@ class RatSpn(nn.Module):
         # Apply feature randomization for each repetition
         x = self._randomize(x)
 
+        if test_dropout and dropout_cf:
+            return self._forward_cf(x, dropout_inference)
+
         # Apply leaf distributions
-        x = self._leaf(x, test_dropout=False, dropout_inference=0.0)
+        x = self._leaf(x, test_dropout=False, dropout_inference=0.0, dropout_cf=dropout_cf)
         # x = self._leaf(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
         # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
         #     print('leaves ', x)
@@ -172,7 +208,7 @@ class RatSpn(nn.Module):
         #     breakpoint()
 
         # Pass through intermediate layers
-        x = self._forward_layers(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+        x = self._forward_layers(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
 
 
         # Merge results from the different repetitions into the channel dimension
@@ -191,7 +227,9 @@ class RatSpn(nn.Module):
 
         return x
 
-    def _forward_layers(self, x, test_dropout=False, dropout_inference=0.0):
+
+
+    def _forward_layers(self, x, test_dropout=False, dropout_inference=0.0, dropout_cf=False):
         """
         Forward pass through the inner sum and product layers.
 
@@ -204,7 +242,7 @@ class RatSpn(nn.Module):
         # Forward to inner product and sum layers
         for layer in self._inner_layers:
             # x_copy = x.detach().clone()
-            x = layer(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+            x = layer(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
             # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
             #     print('layers ', x)
             #     print('input ', x_copy)

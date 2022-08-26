@@ -1113,7 +1113,7 @@ def load_torch(model_dir=None, training_dataset=None, dropout_inference=None, n_
 
 def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0.0, training_dataset='mnist',
               lmbda=0.0, eval_single_digit=False, toy_setting=False, eval_rotation=False, mnist_corruptions=False,
-              n_mcd_passes=100, corrupted_cifar_dir='', eval_every_n_epochs=5, lr=1e-3):
+              n_mcd_passes=100, corrupted_cifar_dir='', eval_every_n_epochs=5, lr=1e-3, dropout_cf=False):
     """Run the torch code.
 
     Args:
@@ -1505,16 +1505,20 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     plot_histograms(class_probs_dict, filename='class_probs_histograms', title="Class Probs", path=d_samples, trained_on_fmnist=training_dataset, y_lim=30000)
 
     train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop, train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP",
-                                                                                                                    dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+                                                                                                                    dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d,
+                                                                                                                                             dropout_cf=dropout_cf)
     test_lls_dropout, class_probs_test_dropout, test_lls_sup_drop, test_lls_unsup_drop, test_lls_dropout_heads = evaluate_model_dropout(model, device, test_loader, "Test DROP",
-                                                                                                                dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+                                                                                                                dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d,
+                                                                                                                                        dropout_cf=dropout_cf)
     print("DROP Train class entropy: {} DROP Test class entropy: {}".format(entropy(class_probs_train_dropout.mean(axis=2), axis=1).sum(), entropy(class_probs_test_dropout.mean(axis=2), axis=1).sum()))
 
     other_train_loader, other_test_loader = get_data_loaders(use_cuda=use_cuda, device=device, batch_size=batch_size, dataset=get_other_dataset_name(training_dataset))
     other_train_lls_dropout, other_class_probs_train_dropout, other_train_lls_sup_drop, other_train_lls_unsup_drop, other_train_lls_dropout_heads = evaluate_model_dropout(model, device, other_train_loader, "Other Train DROP",
-                                                                                                                                            dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+                                                                                                                                            dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d,
+                                                                                                                                                                           dropout_cf=dropout_cf)
     other_test_lls_dropout, other_class_probs_test_dropout, other_test_lls_sup_drop, other_test_lls_unsup_drop, other_test_lls_dropout_heads = evaluate_model_dropout(model, device, other_test_loader, "Other Test DROP",
-                                                                                                                                        dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+                                                                                                                                        dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d,
+                                                                                                                                                                      dropout_cf=dropout_cf)
     print("DROP OTHER Train class entropy: {} DROP OTHER Test class entropy: {}".format(entropy(other_class_probs_train_dropout.mean(axis=2), axis=1).sum(), entropy(other_class_probs_test_dropout.mean(axis=2), axis=1).sum()))
 
     np.save(d_results + 'class_probs_in_domain_train_dropout', class_probs_train_dropout)
@@ -1626,7 +1630,8 @@ def evaluate_model(model: torch.nn.Module, device, loader, tag, output_dir="") -
 
 
 
-def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_inference=0.01, n_dropout_iters=100, output_dir="") -> float:
+def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_inference=0.01, n_dropout_iters=100,
+                           output_dir="", dropout_cf=False) -> float:
     """
     Description for method evaluate_model.
 
@@ -1660,7 +1665,8 @@ def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_
             data_ll_it_heads = torch.zeros(data.shape[0], model.config.C, n_dropout_iters).to(device)
             for i in range(n_dropout_iters):
                 #print(i)
-                output = model(data, test_dropout=True, dropout_inference=dropout_inference)
+                output = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
+                breakpoint()
                 cprobs = output - torch.logsumexp(output, dim=1, keepdims=True)
                 #print(output)
                 data_ll_it += torch.logsumexp(output, dim=1)
@@ -2267,8 +2273,8 @@ if __name__ == "__main__":
     #           eval_every_n_epochs=5, lr=0.001)
     # evaluate_corrupted_svhn(model_dir='results/2022-05-15_00-45-40/model/', dropout_inference=0.2,
     #                         n_mcd_passes=100, corrupted_svhn_dir=corrupted_svhn_dir)
-    evaluate_corrupted_svhn(model_dir='results/2022-05-15_00-45-40/model/', dropout_inference=0.1,
-                            n_mcd_passes=100, corrupted_svhn_dir=corrupted_svhn_dir)
+    # evaluate_corrupted_svhn(model_dir='results/2022-05-15_00-45-40/model/', dropout_inference=0.1,
+    #                         n_mcd_passes=100, corrupted_svhn_dir=corrupted_svhn_dir)
 
     # plot_sum_weights(model_dir='results/2022-07-04_15-09-25/model/', training_dataset='nltcs',
     #                dropout_inference=0.2, n_mcd_passes=100, rat_S=2, rat_I=4, rat_D=2, rat_R=1)
@@ -2279,10 +2285,10 @@ if __name__ == "__main__":
     # post_hoc_exps(model_dir='results/2022-07-01_19-36-52/model/', training_dataset='nltcs',
     #                dropout_inference=[0.8], n_mcd_passes=[10], rat_S=2, rat_I=4, rat_D=2, rat_R=1)
 
-    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
-    #           training_dataset='4gaussians', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
-    #           eval_every_n_epochs=5, lr=0.001)
+    run_torch(20, 200, dropout_inference=0.2, dropout_spn=0.2,
+              training_dataset='4gaussians', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001, dropout_cf=True)
 
     # plot_sum_weights(model_dir='results/2022-06-02_23-13-30/model/', training_dataset='fmnist',
     #               dropout_inference=0.2, n_mcd_passes=100)

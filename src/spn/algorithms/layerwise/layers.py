@@ -10,8 +10,30 @@ from torch.nn import functional as F
 from spn.algorithms.layerwise.type_checks import check_valid
 from spn.algorithms.layerwise.utils import SamplingContext
 
+from icecream import ic
 logger = logging.getLogger(__name__)
 
+def logsumexp(left, right, mask=None):
+    """
+    Source: https://github.com/pytorch/pytorch/issues/32097
+
+    Logsumexp with custom scalar mask to allow for negative values in the sum.
+
+    Args:
+      tensor:
+      other:
+      mask:  (Default value = None)
+
+    Returns:
+
+    """
+    if mask is None:
+        mask = torch.tensor([1, 1])
+    else:
+        assert mask.shape == (2,), "Invalid mask shape"
+
+    maxes = torch.max(left, right)
+    return maxes + ((left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]).log()
 
 class AbstractLayer(nn.Module, ABC):
     def __init__(self, in_features: int, num_repetitions: int = 1):
@@ -81,7 +103,7 @@ class Sum(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.weights.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, fwd_passes=10):
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
         """
         Sum layer foward pass.
 
@@ -94,23 +116,6 @@ class Sum(AbstractLayer):
         # Save input if input cache is enabled
         if self._is_input_cache_enabled:
             self._input_cache = x.clone()
-
-        # TODO for debug only
-        # x_copy = x.detach().clone()
-        # x_copy_2 = x.detach().clone()
-        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
-        #     print(x)
-        #     breakpoint()
-
-        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
-        #     print('input ', x)
-        #     breakpoint()
-        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
-        #     print('input sum ', x)
-        #     breakpoint()
-
-        x_copy = x.detach().clone()
-
 
         # Apply dropout: Set random sum node children to 0 (-inf in log domain)
         # TODO change
@@ -130,58 +135,54 @@ class Sum(AbstractLayer):
         oc = self.weights.size(2)
 
         x = x.unsqueeze(3)  # Shape: [n, d, ic, 1, r]
-        # x_copy = x_copy.unsqueeze(3)
-        # x_copy_2 = x_copy_2.unsqueeze(3)
-
 
         # Normalize weights in log-space along in_channel dimension
         # Weights is of shape [d, ic, oc, r]
-        # print('weights ',  self.weights)
-        # print('weights ls ', F.log_softmax(self.weights, dim=1))
-        # print('weights grad ', self.weights.grad)
-        # print(F.softmax(self.weights))
         logweights = F.log_softmax(self.weights, dim=1)
 
-        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
-        #     print('sum ', x)
-        #     breakpoint()
-        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
-        #     print('sum 2 ', x)
-        #     breakpoint()
-
         # Multiply (add in log-space) input features and weights
-        x = x + logweights  # Shape: [n, d, ic, oc, r]
-        # x_copy = x_copy + logweights
-        # x_copy_2 = x_copy_2 + logweights
-
-
+        log_probs = x + logweights  # Shape: [n, d, ic, oc, r]
+        print(x.shape)
+        print(logweights.shape)
 
         # Compute sum via logsumexp along in_channels dimension
-        x = torch.logsumexp(x, dim=2)  # Shape: [n, d, oc, r]
-        # x_copy = torch.logsumexp(x_copy, dim=2)
-        # x_copy_2 = torch.logsumexp(x_copy_2, dim=2)
-
-        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
-        #     print('sum 3', x)
-        #     breakpoint()
-        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
-        #     print('sum 4 ', x)
-        #     breakpoint()
+        log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r]
 
         # Assert correct dimensions
-        # assert x.size() == (n, d, oc, r)
-        # assert x_copy.size() == (n, d, oc, r)
-        # assert x_copy_2.size() == (n, d, oc, r)
+        assert log_probs.size() == (n, d, oc, r)
 
-        # if test_dropout:
-        #     breakpoint()
+        if vars is not None:
+            squared_weights = logweights * 2
+            squared_exps = x * 2
+            input_vars = vars.unsqueeze(3)
 
+            # left_term = np.log(1 / (1 - dropout_inference)) + \
+            #             torch.logsumexp((squared_weights + input_vars), dim=2)
+            # right_term = np.log(dropout_inference / (1 - dropout_inference)) + \
+            #              torch.logsumexp((squared_weights + squared_exps), dim=2)
 
+            right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
+            print(vars.shape)
+            print(input_vars.shape)
+            print(squared_weights.shape)
+            # if not dropout_cf:
+            #     breakpoint()
+            if not dropout_cf:
+                input_vars = input_vars.reshape((input_vars.shape[0], 1, input_vars.shape[2] * input_vars.shape[4], 1, 1))
+            left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
+            if dropout_cf:
+                right_term += np.log(dropout_inference / (1 - dropout_inference))
+                left_term += np.log(1 / (1 - dropout_inference))
+            log_vars = torch.log(torch.exp(left_term) + torch.exp(right_term))
 
-        # Assert correct dimensions
-        assert x.size() == (n, d, oc, r)
+            print("-------")
+            print(log_probs.shape)
+            print(log_vars.shape)
+            print("-------")
 
-        return x
+            return log_probs, log_vars
+
+        return log_probs
 
     def sample(self, n: int = None, context: SamplingContext = None) -> SamplingContext:
         """Method to sample from this layer, based on the parents output.
@@ -309,7 +310,67 @@ class Product(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self._conv_weights.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0):
+    def _forward_cf(self, x: torch.Tensor, dropout_inference=0.0):
+        exps, vars = x
+
+        # Only one product node
+        if self.cardinality == exps.shape[1]:
+            exps = exps.sum(1, keepdim=True)
+            # TODO
+            vars = vars #TODO
+            ic()
+            breakpoint()
+
+        # Special case: if cardinality is 1 (one child per product node), this is a no-op
+        if self.cardinality == 1:
+            ic()
+            return exps, vars
+
+        # Pad if in_features % cardinality != 0
+        if self._pad > 0:
+            exps = F.pad(exps, pad=(0, 0, 0, 0, 0, self._pad), value=0)
+
+        # Dimensions
+        n, d, c, r = exps.size()
+        d_out = d // self.cardinality
+
+        # Use convolution with 3D weight tensor filled with ones to simulate the product node
+        exps = exps.unsqueeze(1)  # Shape: [n, 1, d, c, r]
+        result = F.conv3d(exps, weight=self._conv_weights, stride=(self.cardinality, 1, 1))
+
+        # Remove simulated channel
+        result = result.squeeze(1)
+
+        assert result.size() == (n, d_out, c, r)
+
+        log_exps = []
+        log_vars = []
+        for ch in self.chs:
+            log_exp_ch, log_var_ch = ch.forward_dropout_cf(x)
+            log_exps.append(log_exp_ch)
+            log_vars.append(log_var_ch)
+
+        log_exps = torch.stack(log_exps, dim=-1)
+        log_vars = torch.stack(log_vars, dim=-1)
+
+        # E[N_P] = \prod_i E[N_i]
+        # logE[N_P] = \sum_i logE[N_i]
+        log_exp_prod = torch.sum(log_exps, dim=-1)
+
+        # Var[N_P] = \prod_i ( Var[N_i] + E[N_i]^2 ) - \prod_i E[N_i]^2
+        # logVar[N_P] = logsumexp(\sum_i ( logsumexp(logVar[N_i]),2*logE[N_i]), \sum_i 2*logE[N_i], mask=[1, -1])
+        # logVar[N_P] =               term_left                        -          term_right
+        term_left = torch.sum(
+            torch.logsumexp(torch.stack((log_vars, 2 * log_exps), dim=-1), dim=-1), dim=-1
+        )
+        term_right = torch.sum(2 * log_exps, dim=1)
+        mask = torch.tensor([1, -1])
+        log_var_prod = logsumexp(term_left, term_right, mask=mask)
+
+        return log_exp_prod, log_var_prod
+
+
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
         """
         Product layer forward pass.
 
@@ -319,6 +380,9 @@ class Product(AbstractLayer):
         Returns:
             torch.Tensor: Output of shape [batch, ceil(in_features/cardinality), channel].
         """
+        if isinstance(x, tuple) and dropout_cf:
+            return self._forward_cf(x, dropout_inference=dropout_inference)
+
         # Only one product node
         if self.cardinality == x.shape[1]:
             return x.sum(1, keepdim=True)
@@ -446,7 +510,7 @@ class CrossProduct(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.unraveled_channel_indices.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0):
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
         """
         Product layer forward pass.
 
@@ -463,6 +527,9 @@ class CrossProduct(AbstractLayer):
 
             # Pad marginalized node
             x = F.pad(x, pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
+
+            if vars is not None and dropout_cf:
+                vars = F.pad(vars, pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
 
         # Dimensions
         n, d, c, r = x.size()
@@ -483,7 +550,32 @@ class CrossProduct(AbstractLayer):
         result = result.view(n, d_out, c * c, r)
 
         assert result.size() == (n, d_out, c * c, r)
-        return result
+
+        if vars is not None and dropout_cf:
+            left_vars = vars[:, self._scopes[0, :], :, :].unsqueeze(3).to(x.device)
+            right_vars = vars[:, self._scopes[1, :], :, :].unsqueeze(2).to(x.device)
+
+            left_squared = left * 2
+            right_squared = right * 2
+
+            # perform variance computation at product nodes
+            var_right_term = left_squared + right_squared
+
+            var_left_term_left = torch.log(torch.exp(left_vars) + torch.exp(left_squared))
+            var_left_term_right = torch.log(torch.exp(right_vars) + torch.exp(right_squared))
+
+            var_left_term = var_left_term_left + var_left_term_right
+
+            mask = torch.tensor([1, -1])
+            log_var_prod = logsumexp(var_left_term, var_right_term, mask=mask) # TODO check computation
+
+            # Put the two channel dimensions from the outer sum into one single dimension:
+            log_var_prod = log_var_prod.view(n, d_out, c * c, r)
+            assert log_var_prod.size() == (n, d_out, c * c, r)
+
+            return result, log_var_prod
+        else:
+            return result
 
     def sample(self, n: int = None, context: SamplingContext = None) -> SamplingContext:
         """Method to sample from this layer, based on the parents output.

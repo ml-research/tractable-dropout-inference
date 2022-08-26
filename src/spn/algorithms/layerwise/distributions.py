@@ -16,6 +16,8 @@ from spn.algorithms.layerwise.clipper import DistributionClipper
 from spn.algorithms.layerwise.layers import AbstractLayer, Sum
 from spn.algorithms.layerwise.type_checks import check_valid
 
+from icecream import ic
+
 logger = logging.getLogger(__name__)
 
 
@@ -152,6 +154,9 @@ class Leaf(AbstractLayer):
             # x[dropout_indices] = np.NINF # TODO test by "truncating" the leaf distribution
             # print(dropout_indices.sum())
             # assert (dropout_indices.sum() <= (x == 0.0).sum())
+            # if dropout_cf:
+            #     vars = torch.zeros(x.shape[0]).log()
+            #     return x, vars
         return x
 
     def _marginalize_input(self, x: torch.Tensor) -> torch.Tensor:
@@ -159,14 +164,15 @@ class Leaf(AbstractLayer):
         x = torch.where(~torch.isnan(x), x, self.marginalization_constant)
         return x
 
-    def forward(self, x, test_dropout=False, dropout_inference=0.0):
+    def forward(self, x, test_dropout=False, dropout_inference=0.0, dropout_cf=False):
         # Forward through base distribution
         d = self._get_base_distribution()
         x = dist_forward(d, x)
 
         x = self._marginalize_input(x)
         x = self._apply_dropout(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
-
+        if test_dropout and dropout_cf:
+            return x, torch.zeros(x.shape).log() # TODO here we are not propagating the uncertainty from laeves
         return x
 
     @abstractmethod

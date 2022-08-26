@@ -11,6 +11,8 @@ from spn.algorithms.layerwise.layers import Product
 from spn.algorithms.layerwise.type_checks import check_valid
 from spn.algorithms.layerwise.utils import SamplingContext
 
+from icecream import ic
+
 logger = logging.getLogger(__name__)
 
 
@@ -121,10 +123,10 @@ class IndependentMultivariate(Leaf):
         if isinstance(self.base_leaf, RatNormal):
             truncated_normal_(self.base_leaf.stds, std=0.5)
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0):
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False):
         # Pass through base leaf
         # copy_data = x.detach().clone()
-        x = self.base_leaf(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+        x = self.base_leaf(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
 
 
         # x = torch.clamp(x, min=None, max=-0.1053)
@@ -144,7 +146,7 @@ class IndependentMultivariate(Leaf):
             x = F.pad(x, pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
 
         # Pass through product layer
-        x = self.prod(x)
+        x = self.prod(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
         # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
         #     print('prod leaves ', x)
         #     breakpoint()
