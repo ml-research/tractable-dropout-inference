@@ -32,6 +32,8 @@ from sklearn import datasets as sk_datasets
 import csv
 import subprocess
 
+from icecream import ic
+
 def maybe_download_debd():
     if os.path.isdir('../data/debd'):
         return
@@ -869,6 +871,113 @@ def evaluate_corrupted_svhn(model_dir=None, dropout_inference=None, n_mcd_passes
                     results_dict['c_{}_l{}'.format(corruption, cl)][0].cpu().detach().numpy())
             np.save(d + 'class_probs_c_{}_l{}'.format(corruption, cl),
                     results_dict['c_{}_l{}'.format(corruption, cl)][1].cpu().detach().numpy())
+
+
+def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
+                  rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None):
+    # dev = sys.argv[1]
+    # device = torch.device("cuda:0")
+    device = sys.argv[1]
+    use_cuda = True
+    torch.cuda.benchmark = True
+
+    d = model_dir + "post_hoc_results/"
+    ensure_dir(d)
+    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device,
+                                                 dataset=training_dataset)
+    n_features = get_data_flatten_shape(train_loader)[1]
+    if training_dataset in DEBD:
+        leaves = Bernoulli
+        rat_C = 2
+    else:
+        leaves = RatNormal
+        rat_C = 10
+
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=device, dropout=dropout_inference, F=n_features,
+                     C=rat_C, leaf_distribution=leaves)
+
+    checkpoint = torch.load(model_dir + 'checkpoint.tar')
+    model.load_state_dict(checkpoint['model_state_dict'])
+    # old models
+    # model.load_state_dict(torch.load(model_dir + 'model.pt'))
+    model.eval()
+
+    tag = "Testing Closed Form dropout: "
+
+    loss_ce = 0
+    loss_nll = 0
+    data_ll = []
+    data_ll_super = []  # pick it from the label-th head
+    data_ll_unsup = []  # pick the max one
+    class_probs = torch.zeros((get_data_flatten_shape(test_loader)[0], model.config.C)).to(device)
+    correct = 0
+
+    mean = 0.1307
+    std = 0.3081
+
+    if model.config.C == 2:
+        criterion = nn.BCELoss(reduction="sum")
+    else:
+        criterion = nn.CrossEntropyLoss(reduction="sum")
+    # criterion = nn.NLLLoss(reduction="sum")
+
+    with torch.no_grad():
+        for batch_index, (data, target) in enumerate(test_loader):
+            data, target = data.to(device), target.to(device)
+
+            if rotation:
+                data = torchvision.transforms.functional.rotate(data.reshape(-1, 1, 28, 28), rotation,
+                                                                fill=-mean / std).reshape(-1, 28, 28)
+            # print(target)
+            data = data.view(data.shape[0], -1)
+
+            output, stds = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+            # output = model(data, test_dropout=False, dropout_inference=0.0, dropout_cf=False)
+            # ic(output)
+            # ic(stds)
+            # ic((output - torch.logsumexp(output, dim=1, keepdims=True)).exp())
+            # ic(output.argmax(dim=1))
+            # ic(stds.argmin(dim=1))
+            # ic(stds.argmax(dim=1))
+            # ic(target)
+            # ic(stds)
+            # ic(stds.exp())
+            # ic(stds.gather(1, output.argmax(dim=1).view(-1,1)))
+            # breakpoint()
+            assert stds.isfinite().sum() == torch.prod(torch.tensor(stds.shape)), "there is at least a non-finite value"
+
+            # sum up batch loss
+            if model.config.C == 2:
+                c_probs = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
+                c_probs = c_probs.gather(1, target.reshape(-1, 1)).flatten()
+                loss_ce += criterion(c_probs, target.float()).item()
+            else:
+                loss_ce += criterion(output, target).item()
+
+            data_ll.extend(torch.logsumexp(output, dim=1).detach().cpu().numpy())
+            data_ll_unsup.extend(output.max(dim=1)[0].detach().cpu().numpy())
+            data_ll_super.extend(output.gather(1, target.reshape(-1, 1)).squeeze().detach().cpu().numpy())
+            class_probs[batch_index * test_loader.batch_size: (batch_index + 1) * test_loader.batch_size, :] = (
+                        output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
+
+            loss_nll += -output.sum()
+            pred = output.argmax(dim=1)
+            correct += (pred == target).sum().item()
+
+    loss_ce /= len(test_loader.dataset)
+    loss_nll /= len(test_loader.dataset) + get_data_flatten_shape(test_loader)[1]
+    accuracy = 100.0 * correct / len(test_loader.dataset)
+
+    output_string = "{} set: Average loss_ce: {:.4f} Average loss_nll: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
+        tag, loss_ce, loss_nll, correct, len(test_loader.dataset), accuracy
+    )
+    print(output_string)
+    with open(d + 'training.out', 'a') as writer:
+        writer.write(output_string + "\n")
+    assert len(data_ll) == get_data_flatten_shape(test_loader)[0]
+    assert len(data_ll_super) == get_data_flatten_shape(test_loader)[0]
+    assert len(data_ll_unsup) == get_data_flatten_shape(test_loader)[0]
+    return data_ll, class_probs.detach().cpu().numpy(), data_ll_super, data_ll_unsup, loss_ce, loss_nll
 
 
 def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512,
@@ -2000,7 +2109,8 @@ def evaluate_model_corrupted_svhn(model: torch.nn.Module, device, loader, tag, d
 
         return dropout_class_probs, class_probs
 
-def evaluate_model_rotated_digits(model: torch.nn.Module, device, loader, tag, dropout_inference=0.01, n_dropout_iters=100, output_dir="", degrees=30, class_label=None) -> float:
+def evaluate_model_rotated_digits(model: torch.nn.Module, device, loader, tag, dropout_inference=0.01,
+                                  n_dropout_iters=100, output_dir="", degrees=30, class_label=None) -> float:
 
     d = output_dir
     d_samples = d + "samples/"
@@ -2285,10 +2395,20 @@ if __name__ == "__main__":
     # post_hoc_exps(model_dir='results/2022-07-01_19-36-52/model/', training_dataset='nltcs',
     #                dropout_inference=[0.8], n_mcd_passes=[10], rat_S=2, rat_I=4, rat_D=2, rat_R=1)
 
-    run_torch(20, 200, dropout_inference=0.2, dropout_spn=0.2,
-              training_dataset='4gaussians', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
-              eval_every_n_epochs=5, lr=0.001, dropout_cf=True)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.01)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.05)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.1)
+    test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.1,
+                     batch_size=200, rotation=30)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.5)
+
+    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=10, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001, dropout_cf=True)
 
     # plot_sum_weights(model_dir='results/2022-06-02_23-13-30/model/', training_dataset='fmnist',
     #               dropout_inference=0.2, n_mcd_passes=100)

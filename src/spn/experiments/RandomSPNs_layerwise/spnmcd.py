@@ -1192,9 +1192,15 @@ def gen_plot_conf_vs_acc_auto(d_results, filename="acc_vs_conf_mcd_p_02"):
 
 			# breakpoint()
 
+            min_std_plot = +np.INF
+			max_std_plot = -np.INF
+
             for idx in range(6, 10, 1):
+				c_values = np.take(dc_class_stds[idx].std(axis=2), dc_class_stds[idx].mean(axis=2).argmax(axis=1))
+				min_std_plot = min(min_std_plot, c_values.min())
+				max_std_plot = max(max_std_plot, c_values.max())
                 sc = ax.scatter([labels[idx]]*dc_class_stds[idx].shape[0], dc_class_stds[idx].mean(axis=2).max(axis=1),
-						        c=np.take(dc_class_stds[idx].std(axis=2), dc_class_stds[idx].mean(axis=2).argmax(axis=1)),
+						        c=c_values,
 						        ec='none',
 						        cmap='Blues',
 						        alpha=0.7,

@@ -13,6 +13,7 @@ from spn.algorithms.layerwise.utils import SamplingContext
 from icecream import ic
 logger = logging.getLogger(__name__)
 
+
 def logsumexp(left, right, mask=None):
     """
     Source: https://github.com/pytorch/pytorch/issues/32097
@@ -124,7 +125,7 @@ class Sum(AbstractLayer):
             while torch.any(torch.all(dropout_indices, dim=2)):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
-        if test_dropout and dropout_inference > 0.0:
+        if test_dropout and dropout_inference > 0.0 and not dropout_cf:
             dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool() #NOTE not the most efficient way
             while torch.any(torch.all(dropout_indices, dim=2)):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
@@ -142,8 +143,8 @@ class Sum(AbstractLayer):
 
         # Multiply (add in log-space) input features and weights
         log_probs = x + logweights  # Shape: [n, d, ic, oc, r]
-        print(x.shape)
-        print(logweights.shape)
+        # print(x.shape)
+        # print(logweights.shape)
 
         # Compute sum via logsumexp along in_channels dimension
         log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r]
@@ -156,29 +157,22 @@ class Sum(AbstractLayer):
             squared_exps = x * 2
             input_vars = vars.unsqueeze(3)
 
-            # left_term = np.log(1 / (1 - dropout_inference)) + \
-            #             torch.logsumexp((squared_weights + input_vars), dim=2)
-            # right_term = np.log(dropout_inference / (1 - dropout_inference)) + \
-            #              torch.logsumexp((squared_weights + squared_exps), dim=2)
-
             right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
-            print(vars.shape)
-            print(input_vars.shape)
-            print(squared_weights.shape)
-            # if not dropout_cf:
-            #     breakpoint()
+
+            # if the sum node corresponds to a root node
             if not dropout_cf:
                 input_vars = input_vars.reshape((input_vars.shape[0], 1, input_vars.shape[2] * input_vars.shape[4], 1, 1))
+
             left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
+
             if dropout_cf:
                 right_term += np.log(dropout_inference / (1 - dropout_inference))
                 left_term += np.log(1 / (1 - dropout_inference))
-            log_vars = torch.log(torch.exp(left_term) + torch.exp(right_term))
 
-            print("-------")
-            print(log_probs.shape)
-            print(log_vars.shape)
-            print("-------")
+            log_vars = logsumexp(left_term, right_term)
+
+            assert log_vars.isnan().sum() == 0, "nan values when propagating from a sum node"
+            assert log_vars.isfinite().sum() > 0, "no finite values while propagating from a sum node"
 
             return log_probs, log_vars
 
@@ -323,7 +317,9 @@ class Product(AbstractLayer):
 
         # Special case: if cardinality is 1 (one child per product node), this is a no-op
         if self.cardinality == 1:
-            ic()
+            # ic()
+            assert exps.isnan().sum() == 0
+            assert vars.isnan().sum() == 0
             return exps, vars
 
         # Pad if in_features % cardinality != 0
@@ -342,32 +338,37 @@ class Product(AbstractLayer):
         result = result.squeeze(1)
 
         assert result.size() == (n, d_out, c, r)
+        return result, torch.zeros_like(result).log() # TODO double chek here, this holds only right after leaves
 
-        log_exps = []
-        log_vars = []
-        for ch in self.chs:
-            log_exp_ch, log_var_ch = ch.forward_dropout_cf(x)
-            log_exps.append(log_exp_ch)
-            log_vars.append(log_var_ch)
+        # log_exps = []
+        # log_vars = []
+        # for ch in self.chs:
+        #     log_exp_ch, log_var_ch = ch.forward_dropout_cf(x)
+        #     log_exps.append(log_exp_ch)
+        #     log_vars.append(log_var_ch)
+        #
+        # log_exps = torch.stack(log_exps, dim=-1)
+        # log_vars = torch.stack(log_vars, dim=-1)
+        #
+        # # E[N_P] = \prod_i E[N_i]
+        # # logE[N_P] = \sum_i logE[N_i]
+        # log_exp_prod = torch.sum(log_exps, dim=-1)
+        #
+        # # Var[N_P] = \prod_i ( Var[N_i] + E[N_i]^2 ) - \prod_i E[N_i]^2
+        # # logVar[N_P] = logsumexp(\sum_i ( logsumexp(logVar[N_i]),2*logE[N_i]), \sum_i 2*logE[N_i], mask=[1, -1])
+        # # logVar[N_P] =               term_left                        -          term_right
+        # term_left = torch.sum(
+        #     torch.logsumexp(torch.stack((log_vars, 2 * log_exps), dim=-1), dim=-1), dim=-1
+        # )
+        # term_right = torch.sum(2 * log_exps, dim=1)
+        # mask = torch.tensor([1, -1])
+        # log_var_prod = logsumexp(term_left, term_right, mask=mask)
 
-        log_exps = torch.stack(log_exps, dim=-1)
-        log_vars = torch.stack(log_vars, dim=-1)
+        # ic()
+        # ic(log_exp_prod)
+        # ic(log_var_prod)
 
-        # E[N_P] = \prod_i E[N_i]
-        # logE[N_P] = \sum_i logE[N_i]
-        log_exp_prod = torch.sum(log_exps, dim=-1)
-
-        # Var[N_P] = \prod_i ( Var[N_i] + E[N_i]^2 ) - \prod_i E[N_i]^2
-        # logVar[N_P] = logsumexp(\sum_i ( logsumexp(logVar[N_i]),2*logE[N_i]), \sum_i 2*logE[N_i], mask=[1, -1])
-        # logVar[N_P] =               term_left                        -          term_right
-        term_left = torch.sum(
-            torch.logsumexp(torch.stack((log_vars, 2 * log_exps), dim=-1), dim=-1), dim=-1
-        )
-        term_right = torch.sum(2 * log_exps, dim=1)
-        mask = torch.tensor([1, -1])
-        log_var_prod = logsumexp(term_left, term_right, mask=mask)
-
-        return log_exp_prod, log_var_prod
+        # return log_exp_prod, log_var_prod
 
 
     def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
@@ -561,17 +562,27 @@ class CrossProduct(AbstractLayer):
             # perform variance computation at product nodes
             var_right_term = left_squared + right_squared
 
-            var_left_term_left = torch.log(torch.exp(left_vars) + torch.exp(left_squared))
-            var_left_term_right = torch.log(torch.exp(right_vars) + torch.exp(right_squared))
+            # var_left_term_left = torch.log(torch.exp(left_vars) + torch.exp(left_squared))
+            var_left_term_left = logsumexp(left_vars, left_squared)
+            # var_left_term_right = torch.log(torch.exp(right_vars) + torch.exp(right_squared))
+            var_left_term_right = logsumexp(right_vars, right_squared)
 
             var_left_term = var_left_term_left + var_left_term_right
 
             mask = torch.tensor([1, -1])
-            log_var_prod = logsumexp(var_left_term, var_right_term, mask=mask) # TODO check computation
+            # log_var_prod = logsumexp(var_left_term, var_right_term, mask=mask) # TODO check computation
+            # log_var_prod = torch.log(torch.clamp(torch.exp(var_left_term) - torch.exp(var_right_term), min=0.0))
+            log_var_prod = logsumexp(var_left_term, var_right_term, mask=mask)
 
             # Put the two channel dimensions from the outer sum into one single dimension:
             log_var_prod = log_var_prod.view(n, d_out, c * c, r)
             assert log_var_prod.size() == (n, d_out, c * c, r)
+
+            # ic()
+            # ic(result)
+            # ic(log_var_prod)
+            assert result.isnan().sum() == 0, "nan values"
+            assert log_var_prod.isnan().sum() == 0, breakpoint()
 
             return result, log_var_prod
         else:

@@ -142,8 +142,14 @@ class IndependentMultivariate(Leaf):
 
 
         if self._pad:
-            # Pad marginalized node
-            x = F.pad(x, pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
+            if test_dropout and dropout_cf:
+                # Pad marginalized node
+                log_exps = F.pad(x[0], pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
+                log_vars = F.pad(x[1], pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
+                x = (log_exps, log_vars)
+            else:
+                # Pad marginalized node
+                x = F.pad(x, pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
 
         # Pass through product layer
         x = self.prod(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
