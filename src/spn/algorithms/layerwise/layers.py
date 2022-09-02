@@ -160,14 +160,16 @@ class Sum(AbstractLayer):
             right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
 
             # if the sum node corresponds to a root node
-            if not dropout_cf:
-                input_vars = input_vars.reshape((input_vars.shape[0], 1, input_vars.shape[2] * input_vars.shape[4], 1, 1))
+            # if not dropout_cf:
+            #     print("double check here, what's happening with the reshaping")
+            #     breakpoint()
+            #     input_vars = input_vars.reshape((input_vars.shape[0], 1, input_vars.shape[2] * input_vars.shape[4], 1, 1))
 
             left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
 
             if dropout_cf:
-                right_term += np.log(dropout_inference / (1 - dropout_inference))
-                left_term += np.log(1 / (1 - dropout_inference))
+                right_term += torch.log(torch.tensor(dropout_inference / (1 - dropout_inference)).to(x.device))
+                left_term += torch.log(torch.tensor(1 / (1 - dropout_inference)).to(x.device))
 
             log_vars = logsumexp(left_term, right_term)
 
@@ -570,17 +572,12 @@ class CrossProduct(AbstractLayer):
             var_left_term = var_left_term_left + var_left_term_right
 
             mask = torch.tensor([1, -1])
-            # log_var_prod = logsumexp(var_left_term, var_right_term, mask=mask) # TODO check computation
-            # log_var_prod = torch.log(torch.clamp(torch.exp(var_left_term) - torch.exp(var_right_term), min=0.0))
             log_var_prod = logsumexp(var_left_term, var_right_term, mask=mask)
 
             # Put the two channel dimensions from the outer sum into one single dimension:
             log_var_prod = log_var_prod.view(n, d_out, c * c, r)
             assert log_var_prod.size() == (n, d_out, c * c, r)
 
-            # ic()
-            # ic(result)
-            # ic(log_var_prod)
             assert result.isnan().sum() == 0, "nan values"
             assert log_var_prod.isnan().sum() == 0, breakpoint()
 

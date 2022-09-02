@@ -936,6 +936,7 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             # ic(output)
             # ic(stds)
             # ic((output - torch.logsumexp(output, dim=1, keepdims=True)).exp())
+            ic(output.max(dim=1))
             # ic(output.argmax(dim=1))
             # ic(stds.argmin(dim=1))
             # ic(stds.argmax(dim=1))
@@ -943,7 +944,10 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             # ic(stds)
             # ic(stds.exp())
             # ic(stds.gather(1, output.argmax(dim=1).view(-1,1)))
-            # breakpoint()
+            # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).exp())
+            # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).mean())
+            # ic(stds.mean())
+            breakpoint()
             assert stds.isfinite().sum() == torch.prod(torch.tensor(stds.shape)), "there is at least a non-finite value"
 
             # sum up batch loss
@@ -2399,7 +2403,7 @@ if __name__ == "__main__":
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.05)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.1)
     test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.1,
-                     batch_size=200, rotation=30)
+                     batch_size=20, rotation=90)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
