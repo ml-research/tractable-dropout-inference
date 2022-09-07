@@ -153,30 +153,26 @@ class Sum(AbstractLayer):
         assert log_probs.size() == (n, d, oc, r)
 
         if vars is not None:
-            squared_weights = logweights * 2
-            squared_exps = x * 2
-            input_vars = vars.unsqueeze(3)
-
-            right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
-
-            # if the sum node corresponds to a root node
-            # if not dropout_cf:
-            #     print("double check here, what's happening with the reshaping")
-            #     breakpoint()
-            #     input_vars = input_vars.reshape((input_vars.shape[0], 1, input_vars.shape[2] * input_vars.shape[4], 1, 1))
-
-            left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
-
             if dropout_cf:
+                squared_weights = logweights * 2
+                squared_exps = x * 2
+                input_vars = vars.unsqueeze(3)
+
+                right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
+                left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
+
                 right_term += torch.log(torch.tensor(dropout_inference / (1 - dropout_inference)).to(x.device))
                 left_term += torch.log(torch.tensor(1 / (1 - dropout_inference)).to(x.device))
 
-            log_vars = logsumexp(left_term, right_term)
+                log_vars = logsumexp(left_term, right_term)
 
-            assert log_vars.isnan().sum() == 0, "nan values when propagating from a sum node"
-            assert log_vars.isfinite().sum() > 0, "no finite values while propagating from a sum node"
+                assert log_vars.isnan().sum() == 0, "nan values when propagating from a sum node"
+                assert log_vars.isfinite().sum() > 0, "no finite values while propagating from a sum node"
 
-            return log_probs, log_vars
+                return log_probs, log_vars
+            else:
+                # if the sum node corresponds to a root node
+                return log_probs, torch.logsumexp((logweights * 2 + vars.unsqueeze(3)), dim=2)
 
         return log_probs
 

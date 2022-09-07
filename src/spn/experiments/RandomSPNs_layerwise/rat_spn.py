@@ -16,28 +16,31 @@ from icecream import ic
 
 logger = logging.getLogger(__name__)
 
-# def logsumexp(left, right, mask=None):
-#     """
-#     Source: https://github.com/pytorch/pytorch/issues/32097
-#
-#     Logsumexp with custom scalar mask to allow for negative values in the sum.
-#
-#     Args:
-#       tensor:
-#       other:
-#       mask:  (Default value = None)
-#
-#     Returns:
-#
-#     """
-#     if mask is None:
-#         mask = torch.tensor([1, 1])
-#     else:
-#         assert mask.shape == (2,), "Invalid mask shape"
-#
-#     maxes = torch.max(left, right)
-#     breakpoint()
-#     return maxes + ((left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]).log()
+def logsumexp(left, right, mask=None):
+    """
+    Source: https://github.com/pytorch/pytorch/issues/32097
+
+    Logsumexp with custom scalar mask to allow for negative values in the sum.
+
+    Args:
+      tensor:
+      other:
+      mask:  (Default value = None)
+
+    Returns:
+
+    """
+    if mask is None:
+        mask = torch.tensor([1, 1])
+    else:
+        assert mask.shape == (2,), "Invalid mask shape"
+
+    maxes = torch.max(left, right)
+    #tt = ((left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]).log()
+    # return maxes + torch.where(tt < 0, torch.tensor([0.0]).to(tt.device), tt).log()
+    # return maxes + torch.where(torch.isclose(tt, torch.tensor([0.0]).to(tt.device), atol=1e-03),
+    #                            torch.tensor([0.001]).to(tt.device), tt).log()
+    return maxes + ((left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]).log()
 
 def invert_permutation(p: torch.Tensor):
     """(left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]
@@ -197,82 +200,102 @@ class RatSpn(nn.Module):
         vars = vars.squeeze(1)
 
         # # compute class probs
-        # vars_copy = vars.clone()
+        vars_copy = vars.detach().clone()
+
+        # we assume class priors are uniform: 1 / n_of_classes #TODO double check if we are learning the root node weights
+        c_i = torch.log(torch.Tensor([1 / self.config.C])).to(x.device)  # 1 / C
+
+        # the variance for each predicted class probabilities decomposes in a product of two terms
+        # here we separate its computation
+        left_term_numerator = x * 2 + c_i * 2
+        left_term_denominator = torch.logsumexp(x + c_i, dim=1) * 2
+        left_term = left_term_numerator - left_term_denominator.reshape((-1, 1)).expand(-1, self.config.C)
+
+        # the right term is composed via the addition/subtraction of 3 terms: a - b + c]
+        # compute a
+        a_numerator = vars + c_i * 2
+        a_denominator = x * 2 + c_i * 2
+        a_term = a_numerator - a_denominator
+
+        # compute b
+        # b corresponds to (in the log space) log(2) + cov - b_denominator
+
+        # # cov is the covariance between two RVs and it is computed via the addition/subtraction
+        # # of 4 terms: d + e + f - g
         #
-        # # we assume class priors are uniform: 1 / n_of_classes #TODO double check if we are learning the root node weights
-        # c_i = torch.log(torch.Tensor([1 / self.config.C])).to(x.device)  # 1 / C
+        # # let's compute the summation over the other elements along the dim 1 excluding the i-th element
+        # x_copy = x.unsqueeze(2).repeat(1, 1, x.shape[1])
+        # x_copy = x_copy + torch.log(1 - torch.eye(x.shape[1])).to(x.device)
+        # x_copy = x_copy.logsumexp(dim=1)
+        # assert x_copy.shape == x.shape
+        # d_term = x + c_i + x_copy + c_i
+        # e_term = vars + c_i * 2
+        # f_term = x * 2 + c_i * 2
+        # g_term = x + c_i + torch.logsumexp(x + c_i, dim=1).reshape((-1, 1)).expand(-1, self.config.C)
         #
-        # # the variance for each predicted class probabilities decomposes in a product of two terms
-        # # here we separate its computation
-        # left_term_numerator = x * 2 + c_i * 2
-        # left_term_denominator = torch.logsumexp(x + c_i, dim=1) * 2
-        # left_term = left_term_numerator - left_term_denominator.reshape((-1, 1)).expand(-1, self.config.C)
+        # # the following cov calculation could cause numerical issues
+        # # cov = torch.log(torch.exp(d_term) + torch.exp(e_term) + torch.exp(f_term) - torch.exp(g_term))
         #
-        # # right term is composed via the addition/subtraction of 3 terms: a - b + c]
-        # # compute a
-        # a_numerator = vars * 2 + c_i * 2
-        # a_denominator = x * 2 + c_i * 2
-        # a_term = a_numerator - a_denominator
-        #
-        # # compute b
-        # # b corresponds to (in the log space) log(2) + cov - b_denominator
-        #
-        # # # cov is the covariance between two RVs and it is computed via the addition/subtraction
-        # # # of 4 terms: d + e + f - g
-        # #
-        # # # let's compute the summation over the other elements along the dim 1 excluding the i-th element
-        # # x_copy = x.unsqueeze(2).repeat(1, 1, x.shape[1])
-        # # x_copy = x_copy + torch.log(1 - torch.eye(x.shape[1])).to(x.device)
-        # # x_copy = x_copy.logsumexp(dim=1)
-        # # assert x_copy.shape == x.shape
-        # # d_term = x + c_i + x_copy + c_i
-        # # e_term = vars + c_i * 2
-        # # f_term = x * 2 + c_i * 2
-        # # g_term = x + c_i + torch.logsumexp(x + c_i, dim=1).reshape((-1, 1)).expand(-1, self.config.C)
-        # #
-        # # # the following cov calculation could cause numerical issues
-        # # # cov = torch.log(torch.exp(d_term) + torch.exp(e_term) + torch.exp(f_term) - torch.exp(g_term))
-        # #
-        # # # manage neg sign in the addition of terms
-        # # mask = torch.tensor([1, -1]).to(x.device)
-        # # cov_left = torch.logsumexp(torch.stack([d_term, e_term, f_term]), dim=0)
-        # # cov = logsumexp(cov_left, g_term, mask=mask)
-        #
-        # cov = vars + c_i * 2
-        #
-        # b_denominator = x + c_i + torch.logsumexp(x, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i
-        # b_term = torch.log(torch.Tensor([2])).to(x.device) + cov - b_denominator
-        #
-        # # compute c
-        # c_numerator = torch.logsumexp(vars + c_i * 2, dim=1)
-        # c_denominator = torch.logsumexp(x * 2 + c_i * 2, dim=1)
-        # c_term = c_numerator - c_denominator
-        #
-        # # the following right_term calculation could cause numerical issues
-        # # right_term = torch.log(torch.exp(a_term) - torch.exp(b_term) +
-        # #                        torch.exp(c_term.reshape((-1, 1)).expand(-1, self.config.C)))
-        # right_term = torch.stack([a_term, b_term, c_term.reshape((-1, 1)).expand(-1, self.config.C)])
+        # # manage neg sign in the addition of terms
+        # mask = torch.tensor([1, -1]).to(x.device)
+        # cov_left = torch.logsumexp(torch.stack([d_term, e_term, f_term]), dim=0)
+        # cov = logsumexp(cov_left, g_term, mask=mask)
+
+        cov = vars + c_i * 2  # this also corresponds to the b term numerator
+
+        b_denominator = x + c_i + torch.logsumexp(x, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i
+        b_term = torch.log(torch.Tensor([2])).to(x.device) + cov - b_denominator
+
+        # compute c
+        c_numerator = torch.logsumexp(vars + c_i * 2, dim=1)
+        c_denominator = torch.logsumexp(x * 2 + c_i * 2, dim=1)
+        c_term = c_numerator - c_denominator
+
+        # the following right_term calculation could cause numerical issues
+        # right_term = torch.log(torch.exp(a_term) - torch.exp(b_term) +
+        #                        torch.exp(c_term.reshape((-1, 1)).expand(-1, self.config.C)))
+        mask = torch.tensor([1, -1]).to(x.device)
+        # right_term = logsumexp(a_term, b_term, mask=mask)
+        # right_term = torch.stack([right_term, c_term.reshape((-1, 1)).expand(-1, self.config.C)])
         # right_term = torch.logsumexp(right_term, dim=0)
-        #
-        # vars = left_term + right_term
-        #
-        # # compute the second order Taylor expansion for the expectations
-        # # the calculation involves three terms h - i + l
-        # # compute h
-        # h_numerator = x + c_i
-        # h_denominator = torch.logsumexp(x, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i
-        # h_term = h_numerator - h_denominator
-        #
-        # # compute i:
-        # i_term = cov - h_denominator * 2
-        #
-        # # compute l
-        # l_numerator = x + c_i + torch.logsumexp(vars_copy, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i * 2
-        # l_denominator = h_denominator * 3
-        # l_term = l_numerator - l_denominator
-        #
-        # # update x with its Taylor expansion
-        # # x = h_term - i_term + l_term
+
+        right_term_1 = logsumexp(a_term, c_term.reshape((-1, 1)).expand(-1, self.config.C),
+                                 mask=torch.tensor([1, 1]).to(a_term.device))
+        right_term = logsumexp(right_term_1, b_term, mask=torch.tensor([1, -1]).to(a_term.device))
+        # TODO the problem here is that we don't always know the source of the nan value
+        # if it is always because of a small negative value in the decimal space then could be ok
+        # to apply the following approximation (usually this small negative values come from numerical
+        # approximation issue, from difference of (almost) equal numbers that should have 0 as outcome).
+        right_term = torch.where(right_term.isnan(), torch.tensor([-float('inf')]).to(right_term.device), right_term) # TODO
+
+        vars = left_term + right_term
+
+        # compute the second order Taylor expansion for the expectations
+        # the calculation involves three terms h - i + l
+        # compute h
+        h_numerator = x + c_i
+        h_denominator = torch.logsumexp(x, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i
+        h_term = h_numerator - h_denominator
+
+        # compute i:
+        i_term = cov - h_denominator * 2
+
+        # compute l
+        l_numerator = x + c_i + torch.logsumexp(vars_copy, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i * 2
+        l_denominator = h_denominator * 3
+        l_term = l_numerator - l_denominator
+
+        # update x with its Taylor expansion
+        # x = logsumexp(logsumexp(h_term, i_term, mask=mask), l_term, mask=torch.tensor([1, 1]).to(x.device))
+
+        # TODO here too, we need to manage negative values result of the difference otherwise
+        # would be impossible to operate in the log space
+        x = logsumexp(logsumexp(h_term, l_term), i_term, mask=mask)
+
+        # assert x.isfinite().sum() == torch.prod(torch.tensor(x.shape)), breakpoint()
+        # assert vars.isfinite().sum() == torch.prod(torch.tensor(vars.shape)), breakpoint()
+        assert x.isnan().sum() == 0, breakpoint()
+        assert vars.isnan().sum() == 0, breakpoint()
 
         return x, vars
 

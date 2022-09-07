@@ -875,6 +875,7 @@ def evaluate_corrupted_svhn(model_dir=None, dropout_inference=None, n_mcd_passes
 
 def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
                   rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None):
+    ic(rotation)
     # dev = sys.argv[1]
     # device = torch.device("cuda:0")
     device = sys.argv[1]
@@ -901,6 +902,7 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
     # old models
     # model.load_state_dict(torch.load(model_dir + 'model.pt'))
     model.eval()
+    print(model)
 
     tag = "Testing Closed Form dropout: "
 
@@ -921,9 +923,14 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         criterion = nn.CrossEntropyLoss(reduction="sum")
     # criterion = nn.NLLLoss(reduction="sum")
 
+    # max_std_eq_max_conds = 0
+
+
+
     with torch.no_grad():
         for batch_index, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
+            ic()
 
             if rotation:
                 data = torchvision.transforms.functional.rotate(data.reshape(-1, 1, 28, 28), rotation,
@@ -933,22 +940,28 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
 
             output, stds = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
             # output = model(data, test_dropout=False, dropout_inference=0.0, dropout_cf=False)
+            # ic(output.exp())
             # ic(output)
             # ic(stds)
             # ic((output - torch.logsumexp(output, dim=1, keepdims=True)).exp())
-            ic(output.max(dim=1))
+            # ic(output.max(dim=1))
+            # ic(output.max(dim=1)[0].exp())
             # ic(output.argmax(dim=1))
             # ic(stds.argmin(dim=1))
             # ic(stds.argmax(dim=1))
             # ic(target)
             # ic(stds)
-            # ic(stds.exp())
-            # ic(stds.gather(1, output.argmax(dim=1).view(-1,1)))
-            # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).exp())
+            # # ic(stds.exp())
+            # # ic(stds.gather(1, output.argmax(dim=1).view(-1,1)))
+            # # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).exp())
             # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).mean())
             # ic(stds.mean())
-            breakpoint()
-            assert stds.isfinite().sum() == torch.prod(torch.tensor(stds.shape)), "there is at least a non-finite value"
+            # breakpoint()
+            # max_std_eq_max_conds += (output.argmax(dim=1) == stds.argmax(dim=1)).sum().item()
+            # ic(torch.where(output.max(dim=1)[0].exp().isnan(), torch.tensor([0.0]).to(output.device), output.max(dim=1)[0].exp()).mean())
+            # ic((torch.where(stds.isnan(), torch.tensor([0.0]).to(stds.device), stds).sum(dim=1)/9.0).mean())
+            # assert stds.isfinite().sum() == torch.prod(torch.tensor(stds.shape)), "there is at least a non-finite value"
+            # assert output.isfinite().sum() == torch.prod(torch.tensor(output.shape)), breakpoint()
 
             # sum up batch loss
             if model.config.C == 2:
@@ -967,6 +980,8 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             loss_nll += -output.sum()
             pred = output.argmax(dim=1)
             correct += (pred == target).sum().item()
+
+        # ic(max_std_eq_max_conds)
 
     loss_ce /= len(test_loader.dataset)
     loss_nll /= len(test_loader.dataset) + get_data_flatten_shape(test_loader)[1]
@@ -2402,8 +2417,10 @@ if __name__ == "__main__":
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.01)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.05)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.1)
-    test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.1,
-                     batch_size=20, rotation=90)
+    test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
+                     batch_size=500, rotation=None)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=500, rotation=None)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
