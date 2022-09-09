@@ -64,14 +64,12 @@ class RatNormal(Leaf):
             sigma = 1.0
 
         means = self.means
-        # print('means 1', means)
+
         if self.max_mean:
             assert self.min_mean is not None
             mean_range = self.max_mean - self.min_mean
             means = torch.sigmoid(self.means) * mean_range + self.min_mean
 
-        # print('means ', means)
-        # print('sigma ', torch.sqrt(sigma))
         gauss = dist.Normal(means, torch.sqrt(sigma))
         return gauss
 
@@ -125,21 +123,7 @@ class IndependentMultivariate(Leaf):
 
     def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False):
         # Pass through base leaf
-        # copy_data = x.detach().clone()
         x = self.base_leaf(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
-
-
-        # x = torch.clamp(x, min=None, max=-0.1053)
-        # if torch.count_nonzero(x) < torch.prod(torch.tensor(x.shape)):
-        #     print('leaves w/ zeros', x)
-        #     print('data ', copy_data)
-        #     print('params ', self.base_leaf.means, self.base_leaf.stds)
-        #     breakpoint()
-        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
-        #     print('fwd leaves ', x)
-        #     breakpoint()
-
-
 
         if self._pad:
             if test_dropout and dropout_cf:
@@ -153,9 +137,9 @@ class IndependentMultivariate(Leaf):
 
         # Pass through product layer
         x = self.prod(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
-        # if torch.isfinite(x).sum() < torch.prod(torch.tensor(x.shape)):
-        #     print('prod leaves ', x)
-        #     breakpoint()
+        if dropout_cf:
+            assert x[0].isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
+            assert x[1].isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
         return x
 
     def _get_base_distribution(self):

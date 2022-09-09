@@ -176,9 +176,13 @@ class RatSpn(nn.Module):
 
     def _forward_cf(self, x: torch.Tensor, dropout_inference):
         x, vars = self._leaf(x, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+        assert x.isnan().sum() == 0, breakpoint()
+        assert vars.isnan().sum() == 0, breakpoint()
 
         x, vars = self._forward_layers_cf(x, vars, dropout_inference=dropout_inference)
         assert x.shape == vars.shape, "shape of expectaions and variances is different"
+        assert x.isnan().sum() == 0, breakpoint()
+        assert vars.isnan().sum() == 0, breakpoint()
 
         # Merge results from the different repetitions into the channel dimension
         n, d, c, r = x.size()
@@ -189,7 +193,8 @@ class RatSpn(nn.Module):
         # Apply C sum node outputs
         # do not apply dropout at the root node but propagate uncertainty estimations
         x, vars = self.root(x, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False, vars=vars)
-        # ic()
+        assert x.isnan().sum() == 0, breakpoint()
+        assert vars.isnan().sum() == 0, breakpoint()
 
         # Remove repetition dimension
         x = x.squeeze(3)
@@ -241,10 +246,10 @@ class RatSpn(nn.Module):
         # cov_left = torch.logsumexp(torch.stack([d_term, e_term, f_term]), dim=0)
         # cov = logsumexp(cov_left, g_term, mask=mask)
 
-        cov = vars + c_i * 2  # this also corresponds to the b term numerator
+        # cov = vars + c_i * 2  # this also corresponds to the b term numerator
 
         b_denominator = x + c_i + torch.logsumexp(x, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i
-        b_term = torch.log(torch.Tensor([2])).to(x.device) + cov - b_denominator
+        b_term = torch.log(torch.Tensor([2])).to(x.device) + vars + c_i * 2 - b_denominator
 
         # compute c
         c_numerator = torch.logsumexp(vars + c_i * 2, dim=1)
@@ -266,7 +271,7 @@ class RatSpn(nn.Module):
         # if it is always because of a small negative value in the decimal space then could be ok
         # to apply the following approximation (usually this small negative values come from numerical
         # approximation issue, from difference of (almost) equal numbers that should have 0 as outcome).
-        right_term = torch.where(right_term.isnan(), torch.tensor([-float('inf')]).to(right_term.device), right_term) # TODO
+        right_term = torch.where(right_term.isnan(), torch.tensor([-float('inf')]).to(right_term.device), right_term) #  TODO
 
         vars = left_term + right_term
 
@@ -278,7 +283,7 @@ class RatSpn(nn.Module):
         h_term = h_numerator - h_denominator
 
         # compute i:
-        i_term = cov - h_denominator * 2
+        i_term = (vars_copy + c_i * 2) - (h_denominator * 2)
 
         # compute l
         l_numerator = x + c_i + torch.logsumexp(vars_copy, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i * 2
@@ -291,6 +296,7 @@ class RatSpn(nn.Module):
         # TODO here too, we need to manage negative values result of the difference otherwise
         # would be impossible to operate in the log space
         x = logsumexp(logsumexp(h_term, l_term), i_term, mask=mask)
+        # x = torch.where(x.isnan(), torch.tensor([-float('inf')]).to(x.device), x)  # TODO
 
         # assert x.isfinite().sum() == torch.prod(torch.tensor(x.shape)), breakpoint()
         # assert vars.isfinite().sum() == torch.prod(torch.tensor(vars.shape)), breakpoint()
@@ -301,11 +307,7 @@ class RatSpn(nn.Module):
 
     def _forward_layers_cf(self, x, vars, dropout_inference=0.0):
         for layer in self._inner_layers:
-            # ic(layer)
             x, vars = layer(x, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=True, vars=vars)
-            # ic(x.shape)
-            # ic(vars.shape)
-        # breakpoint()
         return x, vars
 
     def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False) -> torch.Tensor:

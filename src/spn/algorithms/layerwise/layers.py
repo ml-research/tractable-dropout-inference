@@ -119,14 +119,14 @@ class Sum(AbstractLayer):
             self._input_cache = x.clone()
 
         # Apply dropout: Set random sum node children to 0 (-inf in log domain)
-        # TODO change
         if self.training and self.dropout > 0.0:
             dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             while torch.any(torch.all(dropout_indices, dim=2)):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
         if test_dropout and dropout_inference > 0.0 and not dropout_cf:
-            dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool() #NOTE not the most efficient way
+            # TODO NOTE probably this is not the most efficient way to apply dropout here
+            dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool()
             while torch.any(torch.all(dropout_indices, dim=2)):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
@@ -143,14 +143,18 @@ class Sum(AbstractLayer):
 
         # Multiply (add in log-space) input features and weights
         log_probs = x + logweights  # Shape: [n, d, ic, oc, r]
-        # print(x.shape)
-        # print(logweights.shape)
 
         # Compute sum via logsumexp along in_channels dimension
         log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r]
 
         # Assert correct dimensions
         assert log_probs.size() == (n, d, oc, r)
+
+        # TODO NOTE add constant to account for reduction in expected LL with MCD
+        if test_dropout and dropout_inference > 0.0 and not dropout_cf:
+            log_probs = log_probs - np.log(1 - dropout_inference)
+
+        assert log_probs.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
 
         if vars is not None:
             if dropout_cf:
@@ -165,14 +169,15 @@ class Sum(AbstractLayer):
                 left_term += torch.log(torch.tensor(1 / (1 - dropout_inference)).to(x.device))
 
                 log_vars = logsumexp(left_term, right_term)
-
-                assert log_vars.isnan().sum() == 0, "nan values when propagating from a sum node"
-                assert log_vars.isfinite().sum() > 0, "no finite values while propagating from a sum node"
-
-                return log_probs, log_vars
             else:
-                # if the sum node corresponds to a root node
-                return log_probs, torch.logsumexp((logweights * 2 + vars.unsqueeze(3)), dim=2)
+                # when the sum node corresponds to a root node
+                log_vars = torch.logsumexp((logweights * 2 + vars.unsqueeze(3)), dim=2)
+
+            assert log_vars.isnan().sum() == 0, "NaN values encountered while propagating bottom-up from a Sum node"
+            # TODO NOTE the next assert might be excessive since we could get -inf as valid and legit value
+            assert log_vars.isfinite().sum() > 0, "No finite values while propagating bottom-up from a Sum node"
+
+            return log_probs, log_vars
 
         return log_probs
 
@@ -308,14 +313,11 @@ class Product(AbstractLayer):
         # Only one product node
         if self.cardinality == exps.shape[1]:
             exps = exps.sum(1, keepdim=True)
-            # TODO
-            vars = vars #TODO
-            ic()
+            vars = vars  # TODO implement variance computation at product node for this specific simple case
             breakpoint()
 
         # Special case: if cardinality is 1 (one child per product node), this is a no-op
         if self.cardinality == 1:
-            # ic()
             assert exps.isnan().sum() == 0
             assert vars.isnan().sum() == 0
             return exps, vars
@@ -336,37 +338,8 @@ class Product(AbstractLayer):
         result = result.squeeze(1)
 
         assert result.size() == (n, d_out, c, r)
-        return result, torch.zeros_like(result).log() # TODO double chek here, this holds only right after leaves
-
-        # log_exps = []
-        # log_vars = []
-        # for ch in self.chs:
-        #     log_exp_ch, log_var_ch = ch.forward_dropout_cf(x)
-        #     log_exps.append(log_exp_ch)
-        #     log_vars.append(log_var_ch)
-        #
-        # log_exps = torch.stack(log_exps, dim=-1)
-        # log_vars = torch.stack(log_vars, dim=-1)
-        #
-        # # E[N_P] = \prod_i E[N_i]
-        # # logE[N_P] = \sum_i logE[N_i]
-        # log_exp_prod = torch.sum(log_exps, dim=-1)
-        #
-        # # Var[N_P] = \prod_i ( Var[N_i] + E[N_i]^2 ) - \prod_i E[N_i]^2
-        # # logVar[N_P] = logsumexp(\sum_i ( logsumexp(logVar[N_i]),2*logE[N_i]), \sum_i 2*logE[N_i], mask=[1, -1])
-        # # logVar[N_P] =               term_left                        -          term_right
-        # term_left = torch.sum(
-        #     torch.logsumexp(torch.stack((log_vars, 2 * log_exps), dim=-1), dim=-1), dim=-1
-        # )
-        # term_right = torch.sum(2 * log_exps, dim=1)
-        # mask = torch.tensor([1, -1])
-        # log_var_prod = logsumexp(term_left, term_right, mask=mask)
-
-        # ic()
-        # ic(log_exp_prod)
-        # ic(log_var_prod)
-
-        # return log_exp_prod, log_var_prod
+        assert result.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
+        return result, torch.zeros_like(result).log()  # TODO double check here, this holds only right after leaves
 
 
     def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
@@ -560,9 +533,7 @@ class CrossProduct(AbstractLayer):
             # perform variance computation at product nodes
             var_right_term = left_squared + right_squared
 
-            # var_left_term_left = torch.log(torch.exp(left_vars) + torch.exp(left_squared))
             var_left_term_left = logsumexp(left_vars, left_squared)
-            # var_left_term_right = torch.log(torch.exp(right_vars) + torch.exp(right_squared))
             var_left_term_right = logsumexp(right_vars, right_squared)
 
             var_left_term = var_left_term_left + var_left_term_right
@@ -574,8 +545,8 @@ class CrossProduct(AbstractLayer):
             log_var_prod = log_var_prod.view(n, d_out, c * c, r)
             assert log_var_prod.size() == (n, d_out, c * c, r)
 
-            assert result.isnan().sum() == 0, "nan values"
-            assert log_var_prod.isnan().sum() == 0, breakpoint()
+            assert result.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
+            assert log_var_prod.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
 
             return result, log_var_prod
         else:

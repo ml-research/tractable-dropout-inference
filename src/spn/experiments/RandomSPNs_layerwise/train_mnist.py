@@ -882,7 +882,7 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
     use_cuda = True
     torch.cuda.benchmark = True
 
-    d = model_dir + "post_hoc_results/"
+    d = model_dir + "post_hoc_results/closed_form/"
     ensure_dir(d)
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device,
                                                  dataset=training_dataset)
@@ -927,10 +927,11 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
 
 
 
+
     with torch.no_grad():
+        t_start = time.time()
         for batch_index, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
-            ic()
 
             if rotation:
                 data = torchvision.transforms.functional.rotate(data.reshape(-1, 1, 28, 28), rotation,
@@ -939,17 +940,25 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             data = data.view(data.shape[0], -1)
 
             output, stds = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+            if batch_index == 0:
+                output_res = output.detach().cpu().numpy()
+                var_res = stds.detach().cpu().numpy()
+            else:
+                output_res = np.vstack((output_res, output.detach().cpu().numpy()))
+                var_res = np.vstack((var_res, stds.detach().cpu().numpy()))
             # output = model(data, test_dropout=False, dropout_inference=0.0, dropout_cf=False)
-            # ic(output.exp())
+            #ic(output.exp())
             # ic(output)
-            # ic(stds)
+            #ic(stds)
+            # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).mean())
+            # ic(output.max(dim=1)[0].exp().mean())
             # ic((output - torch.logsumexp(output, dim=1, keepdims=True)).exp())
             # ic(output.max(dim=1))
             # ic(output.max(dim=1)[0].exp())
-            # ic(output.argmax(dim=1))
+            #ic(output.argmax(dim=1))
             # ic(stds.argmin(dim=1))
             # ic(stds.argmax(dim=1))
-            # ic(target)
+            #ic(target)
             # ic(stds)
             # # ic(stds.exp())
             # # ic(stds.gather(1, output.argmax(dim=1).view(-1,1)))
@@ -982,6 +991,13 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             correct += (pred == target).sum().item()
 
         # ic(max_std_eq_max_conds)
+
+        t_delta = time_delta_now(t_start)
+        print("Eval took {}".format(t_delta))
+
+    np.save(d + 'output_{}_{}'.format(dropout_inference, rotation), output_res)
+    np.save(d + 'var_{}_{}'.format(dropout_inference, rotation), var_res)
+
 
     loss_ce /= len(test_loader.dataset)
     loss_nll /= len(test_loader.dataset) + get_data_flatten_shape(test_loader)[1]
@@ -1065,7 +1081,7 @@ def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None,
             head_lls_dict_unsup = {"train_lls_unsup":train_lls_unsup, "test_lls_unsup":test_lls_unsup, "other_mnist_train_unsup":other_mnist_train_lls_unsup, "other_mnist_test_unsup":other_mnist_test_lls_unsup}
 
 
-            train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop,train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
+            train_lls_dropout, class_probs_train_dropout, train_lls_sup_drop, train_lls_unsup_drop, train_lls_dropout_heads = evaluate_model_dropout(model, device, train_loader, "Train DROP", dropout_inference=dropout_inference, n_dropout_iters=n_mcd_passes, output_dir=d)
             np.save(d + 'drop_train_lls', train_lls_dropout)
             np.save(d + 'drop_train_nll', train_lls_dropout_heads)
             print(np.average(train_lls_dropout))
@@ -2417,10 +2433,12 @@ if __name__ == "__main__":
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.01)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.05)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.1)
-    test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=500, rotation=None)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
     #                  batch_size=500, rotation=None)
+    # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=500, rotation=None)
+    test_closed_form(model_dir='results/2022-09-09_14-48-39/model/', training_dataset='mnist', dropout_inference=0.2,
+                     batch_size=200, rotation=None)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
@@ -2440,8 +2458,9 @@ if __name__ == "__main__":
 
     # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
     #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-    #           eval_rotation=True, mnist_corruptions=True, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_rotation=True, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5, lr=0.001)
+
     # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
     #           training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
