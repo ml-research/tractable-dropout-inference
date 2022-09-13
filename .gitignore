@@ -1,4 +1,5 @@
 # added by fv
+dnn_exps/*.npy
 data/
 src/results/
 src/spn/experiments/RandomSPNs_layerwise/#train_mnist#

@@ -1193,12 +1193,12 @@ def gen_plot_conf_vs_acc_auto(d_results, filename="acc_vs_conf_mcd_p_02"):
 			# breakpoint()
 
             min_std_plot = +np.INF
-			max_std_plot = -np.INF
+            max_std_plot = -np.INF
 
             for idx in range(6, 10, 1):
-				c_values = np.take(dc_class_stds[idx].std(axis=2), dc_class_stds[idx].mean(axis=2).argmax(axis=1))
-				min_std_plot = min(min_std_plot, c_values.min())
-				max_std_plot = max(max_std_plot, c_values.max())
+                c_values = np.take(dc_class_stds[idx].std(axis=2), dc_class_stds[idx].mean(axis=2).argmax(axis=1))
+                min_std_plot = min(min_std_plot, c_values.min())
+                max_std_plot = max(max_std_plot, c_values.max())
                 sc = ax.scatter([labels[idx]]*dc_class_stds[idx].shape[0], dc_class_stds[idx].mean(axis=2).max(axis=1),
 						        c=c_values,
 						        ec='none',
@@ -1938,7 +1938,207 @@ def cond_means_pandas():
     fig2 = p1.get_figure()
     fig2.savefig("cond_means.pdf")
 
+
+def test_cf():
+	# first test digit from test set of mnist (it is a digit 7)
+	rotation = [0, 30, 60, 90]
+	mcd_conf = [9.99657035e-01, 6.4379632e-01,  8.67505670e-01, 9.6152580e-01]
+	mcd_std = [5.0881805e-05, 3.1718957e-01, 1.9724238e-01, 1.1185498e-01]
+	pc_conf = [9.9963391e-01, 6.8863291e-01, 9.6427673e-01, 9.9294490e-01]
+	cf_conf = [9.99609411e-01, 6.8677050e-01, 9.6282387e-01, 9.9199086e-01]
+	cf_var = [1.04197956e-04, 1.35398731e-02, 3.02804215e-03, 1.91680354e-03]
+	cf_std = [1.0207740e-02, 1.1636096e-01, 5.5027649e-02, 4.3781314e-02]
+
+	fig = plt.figure()
+	ax = fig.add_subplot()
+
+	labels = [0, 30, 60, 90]
+
+
+	ax.errorbar(labels, mcd_conf, mcd_std, linestyle=None, fmt='.', marker='D', color='blue', label='MCD', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.4)
+	ax.errorbar(labels, cf_conf, cf_std, linestyle=None, fmt='.', marker='X', color='orange', label='CF', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.9)
+	ax.scatter(labels, pc_conf, s=[100, 100, 100, 100], color='red', marker='s', label='PC')
+
+	ax.set_xlabel('rotation (degrees)')
+	ax.set_ylabel('classification confidence')
+	# ax.set_zlabel('std')
+	ax.set_xticks(labels)
+	ax.set_ylim((0.0, 1.3))
+	ax.set_title('Rotating MNIST - 1st test sample')
+	leg = ax.legend()
+	for line in leg.get_lines():
+		line.set_linewidth(0)
+
+	fig.savefig("errbar_plot_1.pdf")
+	fig.savefig("errbar_plot_1.png")
+	plt.close()
+
+	# second digit (it is a digit 2)
+	mcd_conf = [9.98869181e-01, 6.5798098e-01, 9.55576420e-01, 9.9822348e-01 ]
+	mcd_std = [5.1167575e-03, 3.2495275e-01, 1.3688347e-01, 1.8273685e-03]
+	pc_conf = [9.9963391e-01, 6.1864442e-01, 9.9537200e-01, 9.9878001e-01]
+	cf_conf = [9.99504566e-01, 6.0669845e-01, 9.9495846e-01, 9.9866843e-01]
+	cf_var = [2.75330502e-04, 1.08750865e-01, 8.79203435e-04, 3.81608377e-04]
+	cf_std = [1.6593086e-02, 3.2977396e-01, 2.9651364e-02, 1.9534798e-02 ]
+
+	fig = plt.figure()
+	ax = fig.add_subplot()
+
+	ax.errorbar(labels, mcd_conf, mcd_std, linestyle=None, fmt='.', marker='D', color='blue', label='MCD', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.4)
+	ax.errorbar(labels, cf_conf, cf_std, linestyle=None, fmt='.', marker='X', color='orange', label='CF', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.9)
+	ax.scatter(labels, pc_conf, s=[100, 100, 100, 100], color='red', marker='s', label='PC')
+
+	ax.set_xlabel('rotation (degrees)')
+	ax.set_ylabel('classification confidence')
+	# ax.set_zlabel('std')
+	ax.set_xticks(labels)
+	ax.set_ylim((0.0, 1.3))
+	ax.set_title('Rotating MNIST - 2nd test sample')
+	leg = ax.legend()
+	for line in leg.get_lines():
+		line.set_linewidth(0)
+
+	fig.savefig("errbar_plot_2.pdf")
+	fig.savefig("errbar_plot_2.png")
+	plt.close()
+
+	# third digit (it is a digit 1)
+	mcd_conf = [9.99934077e-01, 9.9985003e-01, 8.50023985e-01, 9.7990590e-01]
+	mcd_std = [1.4274109e-04, 4.6997715e-04, 1.8625660e-01, 5.3452808e-02 ]
+	pc_conf = [1.0000000e+00, 1.0000000e+00, 8.8930982e-01, 9.9342984e-01]
+	cf_conf = [9.99999940e-01, 1.0000000e+00, 8.8449442e-01, 9.9309444e-01]
+	cf_var = [8.94019820e-07, 6.33040599e-06, 1.02330865e-02, 6.74115727e-04]
+	cf_std = [1.0168078e-08, 2.5160299e-03, 1.0115872e-01, 2.5963739e-02]
+
+	fig = plt.figure()
+	ax = fig.add_subplot()
+
+	ax.errorbar(labels, mcd_conf, mcd_std, linestyle=None, fmt='.', marker='D', color='blue', label='MCD', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.4)
+	ax.errorbar(labels, cf_conf, cf_std, linestyle=None, fmt='.', marker='X', color='orange', label='CF', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.9)
+	ax.scatter(labels, pc_conf, s=[100, 100, 100, 100], color='red', marker='s', label='PC')
+
+	ax.set_xlabel('rotation (degrees)')
+	ax.set_ylabel('classification confidence')
+	# ax.set_zlabel('std')
+	ax.set_xticks(labels)
+	ax.set_ylim((0.0, 1.3))
+	ax.set_title('Rotating MNIST - 3rd test sample')
+	leg = ax.legend()
+	for line in leg.get_lines():
+		line.set_linewidth(0)
+
+	fig.savefig("errbar_plot_3.pdf")
+	fig.savefig("errbar_plot_3.png")
+	plt.close()
+
+
+
+	cf_var_0 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/var_0.2_None.npy')
+	cf_var_30 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/var_0.2_30.npy')
+	cf_var_60 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/var_0.2_60.npy')
+	cf_var_90 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/var_0.2_90.npy')
+
+	cf_conf_0 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/output_0.2_None.npy')
+	cf_conf_30 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/output_0.2_30.npy')
+	cf_conf_60 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/output_0.2_60.npy')
+	cf_conf_90 = np.load('results/2022-09-09_14-48-39/model/post_hoc_results/closed_form/output_0.2_90.npy')
+
+	drop_0 = np.load('results/2022-09-09_14-48-39/results/dropout_class_probs_0.npy')
+	drop_30 = np.load('results/2022-09-09_14-48-39/results/dropout_class_probs_30.npy')
+	drop_60 = np.load('results/2022-09-09_14-48-39/results/dropout_class_probs_60.npy')
+	drop_90 = np.load('results/2022-09-09_14-48-39/results/dropout_class_probs_90.npy')
+
+	pc_conf_0 = np.load('results/2022-09-09_14-48-39/results/class_probs_0.npy')
+	pc_conf_30 = np.load('results/2022-09-09_14-48-39/results/class_probs_30.npy')
+	pc_conf_60 = np.load('results/2022-09-09_14-48-39/results/class_probs_60.npy')
+	pc_conf_90 = np.load('results/2022-09-09_14-48-39/results/class_probs_90.npy')
+
+	mcd_conf = [drop_0.mean(axis=2).max(axis=1).mean(), drop_30.mean(axis=2).max(axis=1).mean(),
+				drop_60.mean(axis=2).max(axis=1).mean(), drop_90.mean(axis=2).max(axis=1).mean()]
+
+	mcd_std_0 = np.take_along_axis(drop_0.std(axis=2), np.expand_dims(np.argmax(drop_0.mean(axis=2), axis=1), axis=1), axis=1).flatten()
+	mcd_std_0 = mcd_std_0 ** 2
+	mcd_std_0 = mcd_std_0.sum() / 10000  # dataset size
+	mcd_std_0 = np.sqrt(mcd_std_0)
+
+	mcd_std_30 = np.take_along_axis(drop_30.std(axis=2), np.expand_dims(np.argmax(drop_30.mean(axis=2), axis=1), axis=1), axis=1).flatten()
+	mcd_std_30 = mcd_std_30 ** 2
+	mcd_std_30 = mcd_std_30.sum() / 10000  # dataset size
+	mcd_std_30 = np.sqrt(mcd_std_30)
+
+	mcd_std_60 = np.take_along_axis(drop_60.std(axis=2), np.expand_dims(np.argmax(drop_60.mean(axis=2), axis=1), axis=1), axis=1).flatten()
+	mcd_std_60 = mcd_std_60 ** 2
+	mcd_std_60 = mcd_std_60.sum() / 10000  # dataset size
+	mcd_std_60 = np.sqrt(mcd_std_60)
+
+	mcd_std_90 = np.take_along_axis(drop_90.std(axis=2), np.expand_dims(np.argmax(drop_90.mean(axis=2), axis=1), axis=1), axis=1).flatten()
+	mcd_std_90 = mcd_std_90 ** 2
+	mcd_std_90 = mcd_std_90.sum() / 10000  # dataset size
+	mcd_std_90 = np.sqrt(mcd_std_90)
+
+	mcd_std = [mcd_std_0, mcd_std_30, mcd_std_60, mcd_std_90]
+
+	pc_conf = [pc_conf_0.max(axis=1).mean(), pc_conf_30.max(axis=1).mean(), pc_conf_60.max(axis=1).mean(),
+			   pc_conf_90.max(axis=1).mean()]
+
+	cf_std_0 = np.take_along_axis(np.exp(cf_var_0), np.expand_dims(np.argmax(cf_conf_0, axis=1), axis=1), axis=1).flatten()
+	cf_std_0 = cf_std_0.sum() / 10000  # dataset size
+	cf_std_0 = np.sqrt(cf_std_0)
+
+	cf_std_30 = np.take_along_axis(np.exp(cf_var_30), np.expand_dims(np.argmax(cf_conf_30, axis=1), axis=1), axis=1).flatten()
+	cf_std_30 = cf_std_30.sum() / 10000  # dataset size
+	cf_std_30 = np.sqrt(cf_std_30)
+
+	cf_std_60 = np.take_along_axis(np.exp(cf_var_60), np.expand_dims(np.argmax(cf_conf_60, axis=1), axis=1), axis=1).flatten()
+	cf_std_60 = cf_std_60.sum() / 10000  # dataset size
+	cf_std_60 = np.sqrt(cf_std_60)
+
+	cf_std_90 = np.take_along_axis(np.exp(cf_var_90), np.expand_dims(np.argmax(cf_conf_90, axis=1), axis=1), axis=1).flatten()
+	cf_std_90 = cf_std_90.sum() / 10000  # dataset size
+	cf_std_90 = np.sqrt(cf_std_90)
+
+	cf_conf = [np.exp(cf_conf_0.max(axis=1)).mean(), np.exp(cf_conf_30.max(axis=1)).mean(), np.exp(cf_conf_60.max(axis=1)).mean(), np.exp(cf_conf_90.max(axis=1)).mean()]
+	cf_var = []
+	cf_std = [cf_std_0, cf_std_30, cf_std_60, cf_std_90]
+
+	fig = plt.figure()
+	ax = fig.add_subplot()
+
+	ax.errorbar(labels, mcd_conf, mcd_std, linestyle=None, fmt='.', marker='D', color='blue', label='MCD', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.4)
+	ax.errorbar(labels, cf_conf, cf_std, linestyle=None, fmt='.', marker='X', color='orange', label='CF', capsize=4,
+				elinewidth=2, markeredgewidth=4, alpha=0.9)
+	ax.scatter(labels, pc_conf, s=[100, 100, 100, 100], color='red', marker='s', label='PC')
+
+	ax.set_xlabel('rotation (degrees)')
+	ax.set_ylabel('classification confidence')
+	# ax.set_zlabel('std')
+	ax.set_xticks(labels)
+	ax.set_ylim((0.0, 1.3))
+	ax.set_title('Rotating MNIST - Test Set')
+	leg = ax.legend()
+	for line in leg.get_lines():
+		line.set_linewidth(0)
+
+	fig.savefig("errbar_plot_4.pdf")
+	fig.savefig("errbar_plot_4.png")
+	plt.close()
+
+
+
+	# TODO add accuracy
+
+
+
 if __name__ == "__main__":
+    test_cf()
+    sys.exit()
     d_results_p01 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
     d_results_p02 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
     gen_plot_conf_vs_acc_auto(d_results_p01, "acc_vs_conf_mcd_p_01")

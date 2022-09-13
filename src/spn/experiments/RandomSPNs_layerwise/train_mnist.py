@@ -2438,7 +2438,7 @@ if __name__ == "__main__":
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
     #                  batch_size=500, rotation=None)
     test_closed_form(model_dir='results/2022-09-09_14-48-39/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=200, rotation=None)
+                     batch_size=200, rotation=90)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
