@@ -1810,7 +1810,6 @@ def evaluate_model_dropout(model: torch.nn.Module, device, loader, tag, dropout_
             for i in range(n_dropout_iters):
                 #print(i)
                 output = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
-                breakpoint()
                 cprobs = output - torch.logsumexp(output, dim=1, keepdims=True)
                 #print(output)
                 data_ll_it += torch.logsumexp(output, dim=1)
@@ -2437,8 +2436,8 @@ if __name__ == "__main__":
     #                  batch_size=500, rotation=None)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
     #                  batch_size=500, rotation=None)
-    test_closed_form(model_dir='results/2022-09-09_14-48-39/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=200, rotation=90)
+    # test_closed_form(model_dir='results/2022-09-09_14-48-39/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=90)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2)
@@ -2456,10 +2455,101 @@ if __name__ == "__main__":
     # post_hoc_exps(model_dir='results/2022-05-15_00-45-40/model/', training_dataset='svhn',
     #                dropout_inference=[0.2], n_mcd_passes=[100])
 
-    # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
-    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
-    #           eval_rotation=True, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
-    #           eval_every_n_epochs=5, lr=0.001)
+    # experiment useful to check the variance on OODs with the closed form
+    # dropout p = 0.2 (also at learning time)
+    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+              training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+    # dropout p = 0.1 (also at learning time)
+    run_torch(200, 200, dropout_inference=0.1, dropout_spn=0.1,
+              training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    # run experiments on MNIST with corrupted MNIST and rotating digits
+    # dropout p = 0.2 (also at learning time)
+    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+              training_dataset='mnist', lmbda=1.0, eval_single_digit=True, toy_setting=False,
+              eval_rotation=True, mnist_corruptions=True, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    # dropout p = 0.1 (also at learning time)
+    run_torch(200, 200, dropout_inference=0.1, dropout_spn=0.1,
+              training_dataset='mnist', lmbda=1.0, eval_single_digit=True, toy_setting=False,
+              eval_rotation=True, mnist_corruptions=True, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    # Set of experiments to learn the impact of lambda on LL separation vs classification accuracy
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='mnist', lmbda=0.8, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='mnist', lmbda=0.6, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='mnist', lmbda=0.4, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='mnist', lmbda=0.2, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='mnist', lmbda=0.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='fmnist', lmbda=0.8, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='fmnist', lmbda=0.6, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='fmnist', lmbda=0.4, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='fmnist', lmbda=0.2, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+              training_dataset='fmnist', lmbda=0.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    # MCD experiments on SVHN
+    # dropout p = 0.1 (also at learning time)
+    run_torch(200, 200, dropout_inference=0.1, dropout_spn=0.1,
+              training_dataset='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+    # dropout p = 0.2 (also at learning time)
+    run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
+              training_dataset='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+              eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+              eval_every_n_epochs=5, lr=0.001)
+
+
 
     # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,
     #           training_dataset='fmnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
