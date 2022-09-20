@@ -132,8 +132,8 @@ class Sum(AbstractLayer):
             x[dropout_indices] = np.NINF
 
         # Dimensions
-        n, d, ic, r = x.size()
-        oc = self.weights.size(2)
+        N, D, IC, R = x.size()
+        OC = self.weights.size(2)
 
         x = x.unsqueeze(3)  # Shape: [n, d, ic, 1, r]
 
@@ -148,7 +148,7 @@ class Sum(AbstractLayer):
         log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r]
 
         # Assert correct dimensions
-        assert log_probs.size() == (n, d, oc, r)
+        assert log_probs.size() == (N, D, OC, R)
 
         # TODO NOTE add constant to account for reduction in expected LL with MCD
         if test_dropout and dropout_inference > 0.0 and not dropout_cf:
@@ -162,13 +162,18 @@ class Sum(AbstractLayer):
                 squared_exps = x * 2
                 input_vars = vars.unsqueeze(3)
 
-                right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
-                left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
+                # right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
+                # left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
 
-                right_term += torch.log(torch.tensor(dropout_inference / (1 - dropout_inference)).to(x.device))
-                left_term += torch.log(torch.tensor(1 / (1 - dropout_inference)).to(x.device))
+                # right_term += torch.log(torch.tensor(dropout_inference / (1 - dropout_inference)).to(x.device))
+                # left_term += torch.log(torch.tensor(1 / (1 - dropout_inference)).to(x.device))
 
-                log_vars = logsumexp(left_term, right_term)
+                # log_vars = logsumexp(left_term, right_term)
+
+                log_q = np.log(1-dropout_inference)
+                log_p = np.log(dropout_inference)
+                log_var_plus_exp = torch.logsumexp(torch.stack((input_vars, squared_exps + log_p), dim=-1), dim=-1)
+                log_vars = torch.logsumexp(squared_weights + log_var_plus_exp, dim=2) - log_q
             else:
                 # when the sum node corresponds to a root node
                 log_vars = torch.logsumexp((logweights * 2 + vars.unsqueeze(3)), dim=2)
@@ -327,8 +332,8 @@ class Product(AbstractLayer):
             exps = F.pad(exps, pad=(0, 0, 0, 0, 0, self._pad), value=0)
 
         # Dimensions
-        n, d, c, r = exps.size()
-        d_out = d // self.cardinality
+        N, D, C, R = exps.size()
+        D_out = D // self.cardinality
 
         # Use convolution with 3D weight tensor filled with ones to simulate the product node
         exps = exps.unsqueeze(1)  # Shape: [n, 1, d, c, r]
@@ -337,7 +342,7 @@ class Product(AbstractLayer):
         # Remove simulated channel
         result = result.squeeze(1)
 
-        assert result.size() == (n, d_out, c, r)
+        assert result.size() == (N, D_out, C, R)
         assert result.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
         return result, torch.zeros_like(result).log()  # TODO double check here, this holds only right after leaves
 
@@ -504,8 +509,8 @@ class CrossProduct(AbstractLayer):
                 vars = F.pad(vars, pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
 
         # Dimensions
-        n, d, c, r = x.size()
-        d_out = d // self.cardinality
+        N, D, C, R = x.size()
+        D_out = D // self.cardinality
 
         # Build outer sum, using broadcasting, this can be done with
         # modifying the tensor dimensions:
@@ -519,22 +524,22 @@ class CrossProduct(AbstractLayer):
 
         # Put the two channel dimensions from the outer sum into one single dimension:
         # [n, d/2, c, c, r] -> [n, d/2, c * c, r]
-        result = result.view(n, d_out, c * c, r)
+        result = result.view(N, D_out, C * C, R)
 
-        assert result.size() == (n, d_out, c * c, r)
+        assert result.size() == (N, D_out, C * C, R)
 
         if vars is not None and dropout_cf:
             left_vars = vars[:, self._scopes[0, :], :, :].unsqueeze(3).to(x.device)
             right_vars = vars[:, self._scopes[1, :], :, :].unsqueeze(2).to(x.device)
 
-            left_squared = left * 2
-            right_squared = right * 2
+            left_exp_squared = left * 2
+            right_exp_squared = right * 2
 
             # perform variance computation at product nodes
-            var_right_term = left_squared + right_squared
+            var_right_term = left_exp_squared + right_exp_squared
 
-            var_left_term_left = logsumexp(left_vars, left_squared)
-            var_left_term_right = logsumexp(right_vars, right_squared)
+            var_left_term_left = logsumexp(left_vars, left_exp_squared)
+            var_left_term_right = logsumexp(right_vars, right_exp_squared)
 
             var_left_term = var_left_term_left + var_left_term_right
 
@@ -542,8 +547,8 @@ class CrossProduct(AbstractLayer):
             log_var_prod = logsumexp(var_left_term, var_right_term, mask=mask)
 
             # Put the two channel dimensions from the outer sum into one single dimension:
-            log_var_prod = log_var_prod.view(n, d_out, c * c, r)
-            assert log_var_prod.size() == (n, d_out, c * c, r)
+            log_var_prod = log_var_prod.view(N, D_out, C * C, R)
+            assert log_var_prod.size() == (N, D_out, C * C, R)
 
             assert result.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
             assert log_var_prod.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
