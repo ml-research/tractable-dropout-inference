@@ -282,6 +282,10 @@ class RatSpn(nn.Module):
         h_denominator = torch.logsumexp(x, dim=1).reshape((-1, 1)).expand(-1, self.config.C) + c_i
         h_term = h_numerator - h_denominator
 
+        ll_x = torch.logsumexp(x, dim=1) + c_i
+        var_x = c_numerator
+
+
         # compute i:
         i_term = (vars_copy + c_i * 2) - (h_denominator * 2)
 
@@ -303,7 +307,7 @@ class RatSpn(nn.Module):
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
 
-        return x, vars
+        return x, vars, ll_x, var_x
 
     def _forward_layers_cf(self, x, vars, dropout_inference=0.0):
         for layer in self._inner_layers:

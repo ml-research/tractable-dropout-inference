@@ -17,6 +17,9 @@ import pdb
 import torch
 from torchvision import datasets, transforms
 
+from icecream import ic
+import scipy
+
 def plot_mcd_accuracy():
     fig, ax = plt.subplots()
 
@@ -2107,6 +2110,9 @@ def test_cf():
 	cf_var = []
 	cf_std = [cf_std_0, cf_std_30, cf_std_60, cf_std_90]
 
+	# TODO add spacing between the different error bars
+	# TODO add accuracy
+
 	fig = plt.figure()
 	ax = fig.add_subplot()
 
@@ -2130,15 +2136,191 @@ def test_cf():
 	fig.savefig("errbar_plot_4.png")
 	plt.close()
 
+	# compare variance between the closed form and MCD based on class probabilities on OOD
+	labels = ['PC (in)', 'PC (ood)', 'MCD (in)', 'MCD (ood)', 'CF (in)', 'CF (ood)']
+	confs = [0.94528866, 0.7684764, 0.91462845, 0.65015775, 0.9434, 0.7655]
+	stds = [0.0, 0.0, 0.1344187167713523, 0.26569715242478725, 0.07085977875953049, 0.08965669641287215]
 
 
-	# TODO add accuracy
+	fig = plt.figure()
+	ax = fig.add_subplot()
+
+	ax.errorbar(labels, confs, stds, linestyle=None, fmt='.', marker='D', color='blue', capsize=4,
+				elinewidth=2, markeredgewidth=4)
+
+	ax.set_xlabel('model (data)')
+	ax.set_ylabel('classification confidence (std)')
+	# ax.set_zlabel('std')
+	ax.set_xticks(labels)
+	ax.set_ylim((0.3, 1.2))
+	ax.set_title('In-domain vs  OOD (F-MNIST / MNIST)')
+	# leg = ax.legend()
+	# for line in leg.get_lines():
+	#	line.set_linewidth(0)
+
+	plt.grid()
+
+	fig.savefig("errbar_plot_ood_fmnist.pdf")
+	fig.savefig("errbar_plot_ood_fmnist.png")
+	plt.close()
+
+	# compare variance between the closed form and MCD based on class probabilities on OOD
+	labels = ['PC (in)', 'PC (ood)', 'CF (in)', 'CF (ood)']
+	confs = [0.94528866, 0.7684764,  0.9434, 0.7655]
+	stds = [0.0, 0.0, 0.07085977875953049, 0.08965669641287215]
+
+	fig = plt.figure()
+	ax = fig.add_subplot()
+
+	ax.errorbar(labels, confs, stds, linestyle=None, fmt='.', marker='D', color='blue', capsize=4,
+				elinewidth=2, markeredgewidth=4)
+
+	ax.set_xlabel('model (data)')
+	ax.set_ylabel('classification confidence (std)')
+	# ax.set_zlabel('std')
+	ax.set_xticks(labels)
+	ax.set_ylim((0.6, 1.1))
+	ax.set_title('In-domain vs  OOD (F-MNIST / MNIST)')
+	# leg = ax.legend()
+	# for line in leg.get_lines():
+	# 	line.set_linewidth(0)
+
+	plt.grid()
+
+	fig.savefig("errbar_plot_ood_fmnist_2.pdf")
+	fig.savefig("errbar_plot_ood_fmnist_2.png")
+	plt.close()
 
 
+	# TODO do it for MNIST as in-domain
+
+def gen_lls_histograms_cf(test_ll_in, test_ll_ood, filename="lls_histograms_cf.pdf"):
+
+    lls_in_domain_test = np.load(test_ll_in).flatten()
+    other_test_lls = np.load(test_ll_ood).flatten()
+    ic(lls_in_domain_test.mean())
+    ic(other_test_lls.mean())
+
+    df_in_test = pd.DataFrame({'lls_test':lls_in_domain_test})
+    df_ood_test = pd.DataFrame({'other_test_lls':other_test_lls})
+
+    data = pd.concat([df_in_test, df_ood_test], ignore_index=True, axis=1)
+    data = data.rename({0:'F-MNIST Test (In-domain)', 1:'MNIST Test (OOD)'}, axis=1)
+    print(data)
+
+    palette ={"F-MNIST Test (In-domain)": "yellow", "MNIST Test (OOD)": "blue"}
+    my_palette = palette
+    #p3 = sns.histplot(data=data, x='value', hue='column',  bins=50, multiple='layer', kde=True)
+    # p3 = sns.histplot(data=data, multiple='layer', stat="density", palette=palette, cbar_kws={'alpha':0.3})
+    p3 = sns.histplot(data=data, stat="probability", element="bars", common_norm=False, palette=my_palette)
+    # p3 = sns.distplot(a=data, bins=20,  hist_kws={"alpha":0.2, "stat":"probability", "element":"step", "common_norm":False})
+    #p3 = sns.distplot(df_melted,  bins=50)
+    p3.set(xlabel='Data LL', ylabel='rel. proportion of samples')
+    # p3.map(plt.hist, alpha=0.5)
+    #p3 = sns.histplot(data=data, bins=20, multiple='layer')
+    plt.title('Closed Form DC')
+    fig3 = p3.get_figure()
+    fig3.savefig(filename)
+    plt.close()
+
+def gen_lls_histograms_mcd(test_ll_in, test_ll_ood, filename="lls_histograms_mcd.pdf"):
+	lls_in_domain_test = np.load(test_ll_in)
+	lls_in_domain_test = scipy.special.logsumexp(lls_in_domain_test, axis=1)
+	lls_in_domain_test = lls_in_domain_test + np.log(0.1)
+	std_in = lls_in_domain_test.std(axis=1)
+	lls_in_domain_test = lls_in_domain_test.mean(axis=1)
+
+	std_in = std_in ** 2
+	std_in = np.sqrt(std_in.sum() / 10000)
+
+	other_test_lls = np.load(test_ll_ood)
+	other_test_lls = scipy.special.logsumexp(other_test_lls, axis=1)
+	other_test_lls = other_test_lls + np.log(0.1)
+	std_ood = other_test_lls.std(axis=1)
+	other_test_lls = other_test_lls.mean(axis=1)
+
+	std_ood = std_ood ** 2
+	std_ood = np.sqrt(std_ood.sum() / 10000)
+
+	ic(lls_in_domain_test.mean())
+	ic(std_in)
+	ic(other_test_lls.mean())
+	ic(std_ood)
+
+
+	df_in_test = pd.DataFrame({'lls_test': lls_in_domain_test})
+	df_ood_test = pd.DataFrame({'other_test_lls': other_test_lls})
+
+	data = pd.concat([df_in_test, df_ood_test], ignore_index=True, axis=1)
+	data = data.rename({0: 'F-MNIST Test (In-domain)', 1: 'MNIST Test (OOD)'}, axis=1)
+	print(data)
+
+	palette = {"F-MNIST Test (In-domain)": "yellow", "MNIST Test (OOD)": "blue"}
+	my_palette = palette
+	# p3 = sns.histplot(data=data, x='value', hue='column',  bins=50, multiple='layer', kde=True)
+	# p3 = sns.histplot(data=data, multiple='layer', stat="density", palette=palette, cbar_kws={'alpha':0.3})
+	p3 = sns.histplot(data=data, stat="probability", element="bars", common_norm=False, palette=my_palette)
+	# p3 = sns.distplot(a=data, bins=20,  hist_kws={"alpha":0.2, "stat":"probability", "element":"step", "common_norm":False})
+	# p3 = sns.distplot(df_melted,  bins=50)
+	p3.set(xlabel='Data LL', ylabel='rel. proportion of samples')
+	# p3.map(plt.hist, alpha=0.5)
+	# p3 = sns.histplot(data=data, bins=20, multiple='layer')
+	plt.title('Monte Carlo DC')
+	fig3 = p3.get_figure()
+	fig3.savefig(filename)
+	plt.close()
+
+def gen_lls_histograms_pc(test_ll_in, test_ll_ood, filename="lls_histograms_pc.pdf"):
+	lls_in_domain_test = np.load(test_ll_in)
+	lls_in_domain_test = lls_in_domain_test + np.log(0.1)
+
+	other_test_lls = np.load(test_ll_ood)
+	other_test_lls = other_test_lls + np.log(0.1)
+
+	ic(lls_in_domain_test.mean())
+	ic(other_test_lls.mean())
+
+	df_in_test = pd.DataFrame({'lls_test': lls_in_domain_test})
+	df_ood_test = pd.DataFrame({'other_test_lls': other_test_lls})
+
+	data = pd.concat([df_in_test, df_ood_test], ignore_index=True, axis=1)
+	data = data.rename({0: 'F-MNIST Test (In-domain)', 1: 'MNIST Test (OOD)'}, axis=1)
+	print(data)
+
+	palette = {"F-MNIST Test (In-domain)": "yellow", "MNIST Test (OOD)": "blue"}
+	my_palette = palette
+	# p3 = sns.histplot(data=data, x='value', hue='column',  bins=50, multiple='layer', kde=True)
+	# p3 = sns.histplot(data=data, multiple='layer', stat="density", palette=palette, cbar_kws={'alpha':0.3})
+	p3 = sns.histplot(data=data, stat="probability", element="bars", common_norm=False, palette=my_palette)
+	# p3 = sns.distplot(a=data, bins=20,  hist_kws={"alpha":0.2, "stat":"probability", "element":"step", "common_norm":False})
+	# p3 = sns.distplot(df_melted,  bins=50)
+	p3.set(xlabel='Data LL', ylabel='rel. proportion of samples')
+	# p3.map(plt.hist, alpha=0.5)
+	# p3 = sns.histplot(data=data, bins=20, multiple='layer')
+	plt.title('PC')
+	fig3 = p3.get_figure()
+	fig3.savefig(filename)
+	plt.close()
 
 if __name__ == "__main__":
     test_cf()
+    gen_lls_histograms_cf('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_fmnist_0.2_None.npy',
+						  'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_mnist_0.2_None.npy')
+
+    var_x_in = np.load('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_x_fmnist_0.2_None.npy').flatten()
+    var_x_ood = np.load('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_x_mnist_0.2_None.npy').flatten()
+
+    cf_std_ll_in = (scipy.special.logsumexp(var_x_in) - 10000 ) / 2
+    cf_std_ll_ood = (scipy.special.logsumexp(var_x_ood) - 10000 ) / 2
+    ic(cf_std_ll_in)
+    ic(cf_std_ll_ood)
+
+    gen_lls_histograms_mcd('results/2022-09-14_14-28-01/results/test_lls_dropout_in_domain_heads.npy',
+						   'results/2022-09-14_14-28-01/results/test_lls_dropout_ood_heads.npy')
+    gen_lls_histograms_pc('results/2022-09-14_14-28-01/results/likelihoods/test_lls.npy',
+						  'results/2022-09-14_14-28-01/results/likelihoods/other_test_lls.npy')
     sys.exit()
+
     d_results_p01 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
     d_results_p02 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
     gen_plot_conf_vs_acc_auto(d_results_p01, "acc_vs_conf_mcd_p_01")
