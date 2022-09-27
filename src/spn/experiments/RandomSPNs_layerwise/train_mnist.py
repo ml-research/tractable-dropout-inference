@@ -34,6 +34,8 @@ import subprocess
 
 from icecream import ic
 
+from rtpt import RTPT
+
 def maybe_download_debd():
     if os.path.isdir('../data/debd'):
         return
@@ -874,7 +876,7 @@ def evaluate_corrupted_svhn(model_dir=None, dropout_inference=None, n_mcd_passes
 
 
 def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
-                  rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None):
+                  rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None, eval_train_set=False):
     ic(training_dataset)
     ic(rotation)
     # dev = sys.argv[1]
@@ -887,6 +889,9 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
     ensure_dir(d)
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device,
                                                  dataset=training_dataset)
+    if eval_train_set:
+        test_loader = train_loader
+
     n_features = get_data_flatten_shape(train_loader)[1]
     if training_dataset in DEBD:
         leaves = Bernoulli
@@ -940,17 +945,23 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
                                                                 fill=-mean / std).reshape(-1, 28, 28)
             data = data.view(data.shape[0], -1)
 
-            output, stds, ll_x, var_x = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+            output, stds, ll_x, var_x, root_heads, heads_vars = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
             if batch_index == 0:
                 output_res = output.detach().cpu().numpy()
                 var_res = stds.detach().cpu().numpy()
                 ll_x_res = ll_x.detach().cpu().numpy().flatten()
                 var_x_res = var_x.detach().cpu().numpy().flatten()
+                root_heads_res = root_heads.detach().cpu().numpy()
+                heads_vars_res = heads_vars.detach().cpu().numpy()
             else:
-                output_res = np.vstack((output_res, output.detach().cpu().numpy()))
-                var_res = np.vstack((var_res, stds.detach().cpu().numpy()))
-                ll_x_res = np.vstack((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
-                var_x_res = np.vstack((var_x_res, var_x.detach().cpu().numpy().flatten()))
+                output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
+                var_res = np.concatenate((var_res, stds.detach().cpu().numpy()))
+                ll_x_res = np.concatenate((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
+                var_x_res = np.concatenate((var_x_res, var_x.detach().cpu().numpy().flatten()))
+                root_heads_res = np.concatenate((root_heads_res, root_heads.detach().cpu().numpy()))
+                heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
+
+
             # output = model(data, test_dropout=False, dropout_inference=0.0, dropout_cf=False)
             #ic(output.exp())
             # ic(output)
@@ -970,7 +981,6 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             # # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).exp())
             # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).mean())
             # ic(stds.mean())
-            # breakpoint()
             # max_std_eq_max_conds += (output.argmax(dim=1) == stds.argmax(dim=1)).sum().item()
             # ic(torch.where(output.max(dim=1)[0].exp().isnan(), torch.tensor([0.0]).to(output.device), output.max(dim=1)[0].exp()).mean())
             # ic((torch.where(stds.isnan(), torch.tensor([0.0]).to(stds.device), stds).sum(dim=1)/9.0).mean())
@@ -1000,10 +1010,16 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         t_delta = time_delta_now(t_start)
         print("Eval took {}".format(t_delta))
 
-    np.save(d + 'output_{}_{}_{}'.format(training_dataset, dropout_inference, rotation), output_res)
-    np.save(d + 'var_{}_{}_{}'.format(training_dataset, dropout_inference, rotation), var_res)
-    np.save(d + 'll_x_{}_{}_{}'.format(training_dataset, dropout_inference, rotation), ll_x_res)
-    np.save(d + 'var_x_{}_{}_{}'.format(training_dataset, dropout_inference, rotation), var_x_res)
+    if eval_train_set:
+        fold = 'train'
+    else:
+        fold = 'test'
+    np.save(d + 'output_{}_{}_{}_{}'.format(training_dataset, fold, dropout_inference, rotation), output_res)
+    np.save(d + 'var_{}_{}_{}_{}'.format(training_dataset, fold, dropout_inference, rotation), var_res)
+    np.save(d + 'll_x_{}_{}_{}_{}'.format(training_dataset, fold, dropout_inference, rotation), ll_x_res)
+    np.save(d + 'var_x_{}_{}_{}_{}'.format(training_dataset, fold, dropout_inference, rotation), var_x_res)
+    np.save(d + 'heads_x_{}_{}_{}_{}'.format(training_dataset, fold, dropout_inference, rotation), root_heads_res)
+    np.save(d + 'heads_vars_{}_{}_{}_{}'.format(training_dataset, fold, dropout_inference, rotation), heads_vars_res)
 
     # ic((output_res - np.logsumexp(output_res, axis=1)).exp().max(axis=1).mean())
     ic(class_probs.max(dim=1)[0].mean())
@@ -1300,6 +1316,8 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     d = "results/{}/".format(datetime_str)
     ensure_dir(d)
 
+    rtpt = RTPT(name_initials='FV', experiment_name='DCs', max_iterations=n_epochs+10)
+
 
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
     n_features = get_data_flatten_shape(train_loader)[1]
@@ -1368,6 +1386,8 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     test_loss = []
     test_loss_ce = []
     test_loss_nll = []
+
+    rtpt.start()
 
 
     for epoch in range(n_epochs):
@@ -1478,6 +1498,8 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
                 'lmbda': lmbda,
                 'lr': lr,
             }, d + 'model/checkpoint.tar')
+
+        rtpt.step()
 
 
     print('Saving model...')
@@ -2457,13 +2479,65 @@ if __name__ == "__main__":
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset=get_other_dataset_name('mnist'),
     #                  dropout_inference=0.2, batch_size=500, rotation=None, model=m1)
 
-    m1 = test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='fmnist',
-                          dropout_inference=0.2,
-                          batch_size=500, rotation=None)
+    # m1 = test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='fmnist',
+    #                       dropout_inference=0.2, batch_size=200, rotation=None, eval_train_set=True)
     # test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='fmnist', dropout_inference=0.2,
-    #                  batch_size=500, rotation=None, model=m1)
-    test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset=get_other_dataset_name('fmnist'),
-                     dropout_inference=0.2, batch_size=500, rotation=None, model=m1)
+    #                  batch_size=200, rotation=None, model=m1, eval_train_set=False)
+    # test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='mnist',
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m1, eval_train_set=False)
+    # test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='kmnist',
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m1, eval_train_set=False)
+    # test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='emnist',
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m1, eval_train_set=False)
+
+    # m2 = test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist',
+    #                       dropout_inference=0.2, batch_size=200, rotation=None, eval_train_set=False)
+    # # test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='fmnist', dropout_inference=0.2,
+    # #                  batch_size=500, rotation=None, model=m1)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist',
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m2, eval_train_set=True)
+    #
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset=get_other_dataset_name('mnist'),
+    #                       dropout_inference=0.2, batch_size=200, rotation=None, model=m2, eval_train_set=False)
+    # # test_closed_form(model_dir='results/2022-09-14_14-28-01/model/', training_dataset='fmnist', dropout_inference=0.2,
+    # #                  batch_size=500, rotation=None, model=m1)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset=get_other_dataset_name('mnist'),
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m2, eval_train_set=True)
+
+    # m3 = test_closed_form(model_dir='results/2022-09-22_11-26-12/model/', training_dataset='svhn',
+    #                       dropout_inference=0.2, batch_size=200, rotation=None, eval_train_set=False)
+    #
+    # test_closed_form(model_dir='results/2022-09-22_11-26-12/model/', training_dataset=get_other_dataset_name('svhn'),
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m3, eval_train_set=False)
+
+
+    #
+    # test_closed_form(model_dir='results/2022-09-22_11-26-12/model/', training_dataset='svhn',
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m3, eval_train_set=True)
+    #
+    # test_closed_form(model_dir='results/2022-09-22_11-26-12/model/', training_dataset=get_other_dataset_name('svhn'),
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m3, eval_train_set=True)
+
+    # svhn dropout 0.1
+    # m4 = test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset='svhn',
+    #                       dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=False)
+    #
+    # test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset=get_other_dataset_name('svhn'),
+    #                  dropout_inference=0.1, batch_size=200, rotation=None, model=m4, eval_train_set=False)
+    #
+    # test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset='svhn',
+    #                  dropout_inference=0.1, batch_size=200, rotation=None, model=m4, eval_train_set=True)
+    #
+    # test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset=get_other_dataset_name('svhn'),
+    #                  dropout_inference=0.1, batch_size=200, rotation=None, model=m4, eval_train_set=True)
+
+
+    #
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset=get_other_dataset_name('mnist'),
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m2, eval_train_set=False)
+    #
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset=get_other_dataset_name('mnist'),
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m2, eval_train_set=True)
 
     # test_closed_form(model_dir='results/2022-08-29_13-50-24/model/', training_dataset='mnist', dropout_inference=0.2,
     #                  batch_size=500, rotation=None)
@@ -2526,6 +2600,11 @@ if __name__ == "__main__":
     #           eval_every_n_epochs=5, lr=0.001)
     #
     # # Set of experiments to learn the impact of lambda on LL separation vs classification accuracy
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
+    #
     # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
     #           training_dataset='mnist', lmbda=0.8, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
@@ -2593,7 +2672,19 @@ if __name__ == "__main__":
     #           training_dataset='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=False,
     #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
     #           eval_every_n_epochs=5, lr=0.001)
+    # dropout p = 0.0 (also at learning time)
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+    #           training_dataset='svhn', lmbda=1.0, eval_single_digit=False, toy_setting=False,
+    #           eval_rotation=False, mnist_corruptions=False, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
 
+    # TODO
+    # learn on MNIST without dropout at inference nor at learning time and evaluate on
+    # MNIST-C and on rotating images
+    # run_torch(200, 200, dropout_inference=0.0, dropout_spn=0.0,
+    #           training_dataset='mnist', lmbda=1.0, eval_single_digit=True, toy_setting=False,
+    #           eval_rotation=True, mnist_corruptions=True, n_mcd_passes=100, corrupted_cifar_dir=corrupted_cifar_dir,
+    #           eval_every_n_epochs=5, lr=0.001)
 
 
     # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2,

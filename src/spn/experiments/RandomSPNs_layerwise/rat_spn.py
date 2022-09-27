@@ -204,6 +204,9 @@ class RatSpn(nn.Module):
         x = x.squeeze(1)
         vars = vars.squeeze(1)
 
+        # keep one copy of the root heads' output
+        heads_output = x.detach().clone()
+
         # # compute class probs
         vars_copy = vars.detach().clone()
 
@@ -307,7 +310,7 @@ class RatSpn(nn.Module):
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
 
-        return x, vars, ll_x, var_x
+        return x, vars, ll_x, var_x, heads_output, vars_copy
 
     def _forward_layers_cf(self, x, vars, dropout_inference=0.0):
         for layer in self._inner_layers:

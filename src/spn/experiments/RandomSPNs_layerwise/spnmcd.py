@@ -20,6 +20,10 @@ from torchvision import datasets, transforms
 from icecream import ic
 import scipy
 
+from tueplots import bundles
+plt.rcParams.update(bundles.aistats2023())
+
+
 def plot_mcd_accuracy():
     fig, ax = plt.subplots()
 
@@ -330,10 +334,14 @@ def plot_multiple_boxplots_rotatiing_digits(d_results):
 	max_class_probs_300 = class_probs_300.max(axis=1)
 	max_class_probs_270 = class_probs_270.max(axis=1)
 
-	boxplot_data = np.column_stack((max_class_probs_90, max_class_probs_60, max_class_probs_30, max_class_probs_0, max_class_probs_330, max_class_probs_300, max_class_probs_270))
-	drop_boxplot_data = np.column_stack((drop_max_class_probs_90, drop_max_class_probs_60, drop_max_class_probs_30, drop_max_class_probs_0, drop_max_class_probs_330, drop_max_class_probs_300, drop_max_class_probs_270))
-	entropy_boxplot_data = np.column_stack((entropy_class_probs_90, entropy_class_probs_60, entropy_class_probs_30, entropy_class_probs_0, entropy_class_probs_330, entropy_class_probs_300, entropy_class_probs_270))
-	entropy_drop_boxplot_data = np.column_stack((drop_entropy_class_probs_90, drop_entropy_class_probs_60, drop_entropy_class_probs_30, drop_entropy_class_probs_0, drop_entropy_class_probs_330, drop_entropy_class_probs_300, drop_entropy_class_probs_270))
+	boxplot_data = np.column_stack((max_class_probs_90, max_class_probs_60, max_class_probs_30, max_class_probs_0,
+									max_class_probs_330, max_class_probs_300, max_class_probs_270))
+	drop_boxplot_data = np.column_stack((drop_max_class_probs_90, drop_max_class_probs_60, drop_max_class_probs_30,
+										 drop_max_class_probs_0, drop_max_class_probs_330, drop_max_class_probs_300, drop_max_class_probs_270))
+	entropy_boxplot_data = np.column_stack((entropy_class_probs_90, entropy_class_probs_60, entropy_class_probs_30,
+											entropy_class_probs_0, entropy_class_probs_330, entropy_class_probs_300, entropy_class_probs_270))
+	entropy_drop_boxplot_data = np.column_stack((drop_entropy_class_probs_90, drop_entropy_class_probs_60,
+												 drop_entropy_class_probs_30, drop_entropy_class_probs_0, drop_entropy_class_probs_330, drop_entropy_class_probs_300, drop_entropy_class_probs_270))
 
     # gen 4 boxplots in 1 rows
 	fig, axes = plt.subplots(nrows=1, ncols=4, sharex=True, sharey=False, figsize=(14,4), tight_layout=True)
@@ -343,10 +351,14 @@ def plot_multiple_boxplots_rotatiing_digits(d_results):
 	meanlineprops = dict(linestyle='--', linewidth=1, color='purple')
 	meanpointprops = dict(marker='D', markeredgecolor='black', markerfacecolor='indianred')
 
-	bp1 = axes[0].boxplot(boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True, meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
-	bp2 = axes[1].boxplot(drop_boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True, meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
-	bp3 = axes[2].boxplot(entropy_boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True, meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
-	bp4 = axes[3].boxplot(entropy_drop_boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True, meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
+	bp1 = axes[0].boxplot(boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+						  meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
+	bp2 = axes[1].boxplot(drop_boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+						  meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
+	bp3 = axes[2].boxplot(entropy_boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+						  meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
+	bp4 = axes[3].boxplot(entropy_drop_boxplot_data, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+						  meanline=False, labels=labels_rotation, showfliers=False, patch_artist=True)
     
 	axes[0].set_title('Probabilistic Circuits')
 	axes[1].set_title('Dropout Circuits')
@@ -1195,18 +1207,21 @@ def gen_plot_conf_vs_acc_auto(d_results, filename="acc_vs_conf_mcd_p_02"):
 
 			# breakpoint()
 
-            min_std_plot = +np.INF
-            max_std_plot = -np.INF
+            min_std_plot = +np.inf
+            max_std_plot = -np.inf
 
             for idx in range(6, 10, 1):
-                c_values = np.take(dc_class_stds[idx].std(axis=2), dc_class_stds[idx].mean(axis=2).argmax(axis=1))
+                # c_values = np.take(dc_class_stds[idx].std(axis=2), dc_class_stds[idx].mean(axis=2).argmax(axis=1))
+                c_values = np.take_along_axis(dc_class_stds[idx].std(axis=2),
+								   np.expand_dims(np.argmax(dc_class_stds[idx].mean(axis=2), axis=1), axis=1),
+								   axis=1).flatten()
                 min_std_plot = min(min_std_plot, c_values.min())
                 max_std_plot = max(max_std_plot, c_values.max())
-                sc = ax.scatter([labels[idx]]*dc_class_stds[idx].shape[0], dc_class_stds[idx].mean(axis=2).max(axis=1),
-						        c=c_values,
+                sc = ax.scatter([labels[idx]]*100, dc_class_stds[idx].mean(axis=2).max(axis=1)[:100],
+						        c=c_values[:100],
 						        ec='none',
 						        cmap='Blues',
-						        alpha=0.7,
+						        alpha=0.5,
 						        s=600)
 
 
@@ -2141,12 +2156,11 @@ def test_cf():
 	confs = [0.94528866, 0.7684764, 0.91462845, 0.65015775, 0.9434, 0.7655]
 	stds = [0.0, 0.0, 0.1344187167713523, 0.26569715242478725, 0.07085977875953049, 0.08965669641287215]
 
-
 	fig = plt.figure()
 	ax = fig.add_subplot()
 
-	ax.errorbar(labels, confs, stds, linestyle=None, fmt='.', marker='D', color='blue', capsize=4,
-				elinewidth=2, markeredgewidth=4)
+	ax.errorbar(labels, confs, yerr=stds, linestyle=None, fmt='.', marker='D', color='blue', capsize=1,
+				elinewidth=1, markeredgewidth=1)
 
 	ax.set_xlabel('model (data)')
 	ax.set_ylabel('classification confidence (std)')
@@ -2163,6 +2177,57 @@ def test_cf():
 	fig.savefig("errbar_plot_ood_fmnist.pdf")
 	fig.savefig("errbar_plot_ood_fmnist.png")
 	plt.close()
+
+	# sanity check for STD values (mu + std should be <= 1.0)
+	# fig = plt.figure()
+	# ax = fig.add_subplot()
+	test_class_probs_in = np.load('results/2022-09-14_14-28-01/results/class_probs_in_domain_test_dropout.npy')
+	test_class_probs_ood = np.load('results/2022-09-14_14-28-01/results/class_probs_ood_test_dropout.npy')
+	# test_ids = np.arange(10000)
+	pred_confs = test_class_probs_in.mean(axis=2).max(axis=1)
+	pred_confs_ood = test_class_probs_ood.mean(axis=2).max(axis=1)
+	# pred_stds = np.take_along_axis(test_class_probs_in.std(axis=2),
+	# 							   np.expand_dims(np.argmax(test_class_probs_in.mean(axis=2),
+	# 														axis=1),
+	# 											  axis=1),
+	# 							   axis=1).flatten()
+	#
+	# ax.errorbar(test_ids, pred_confs, yerr=pred_stds, linestyle=None, fmt='.', marker='D', color='blue', capsize=1,
+	# 			elinewidth=1, markeredgewidth=1)
+	# # ax.errorbar(labels, confs, stds, linestyle=None, fmt='.', marker='D', color='blue', capsize=4,
+	# # 			elinewidth=2, markeredgewidth=4)
+	#
+	# ax.set_xlabel('model (data)')
+	# ax.set_ylabel('classification confidence (std)')
+	# # ax.set_zlabel('std')
+	# ax.set_xticks(test_ids)
+	# ax.set_ylim((-0.1, 1.4))
+	# ax.set_title('In-domain vs  OOD (F-MNIST / MNIST)')
+	# # leg = ax.legend()
+	# # for line in leg.get_lines():
+	# #	line.set_linewidth(0)
+	#
+	# plt.grid()
+	#
+	# fig.savefig("errbar_plot_ood_fmnist_ALL.pdf")
+	# fig.savefig("errbar_plot_ood_fmnist_ALL.png")
+	# plt.close()
+
+	# plot boxplots for MCD and CF of class confidences
+	cf_test_class_probs_in = np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_fmnist_0.2_None.npy')
+	cf_test_class_probs_ood = np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_mnist_0.2_None.npy')
+	cf_pred_confs = cf_test_class_probs_in.max(axis=1)
+	cf_pred_confs_ood = cf_test_class_probs_ood.max(axis=1)
+	boxplot_data = np.column_stack((pred_confs, pred_confs_ood, np.exp(cf_pred_confs), np.exp(cf_pred_confs_ood)))
+	fig = plt.figure()
+	ax = fig.add_subplot()
+	ax.boxplot(boxplot_data, showmeans=True)
+	plt.savefig('boxplot_mcf_cf.png')
+	plt.savefig('boxplot_mcf_cf.pdf')
+	plt.close()
+
 
 	# compare variance between the closed form and MCD based on class probabilities on OOD
 	labels = ['PC (in)', 'PC (ood)', 'CF (in)', 'CF (ood)']
@@ -2205,7 +2270,7 @@ def gen_lls_histograms_cf(test_ll_in, test_ll_ood, filename="lls_histograms_cf.p
     df_ood_test = pd.DataFrame({'other_test_lls':other_test_lls})
 
     data = pd.concat([df_in_test, df_ood_test], ignore_index=True, axis=1)
-    data = data.rename({0:'F-MNIST Test (In-domain)', 1:'MNIST Test (OOD)'}, axis=1)
+    data = data.rename({0: 'F-MNIST Test (In-domain)', 1: 'MNIST Test (OOD)'}, axis=1)
     print(data)
 
     palette ={"F-MNIST Test (In-domain)": "yellow", "MNIST Test (OOD)": "blue"}
@@ -2302,156 +2367,843 @@ def gen_lls_histograms_pc(test_ll_in, test_ll_ood, filename="lls_histograms_pc.p
 	fig3.savefig(filename)
 	plt.close()
 
+
+def gen_class_probs_histograms():
+	bins = 20
+	density = False
+
+	# load MNIST PC results
+	class_probs_in_domain_train_1 = np.load('results/2022-09-16_21-08-27/results/class_probs_in_domain_train.npy')
+	class_probs_in_domain_test_1 = np.load('results/2022-09-16_21-08-27/results/class_probs_in_domain_test.npy')
+	class_probs_ood_train_1 = np.load('results/2022-09-16_21-08-27/results/class_probs_ood_train.npy')
+	class_probs_ood_test_1 = np.load('results/2022-09-16_21-08-27/results/class_probs_ood_test.npy')
+
+	if density:
+		class_probs_in_domain_test_1 = np.repeat(class_probs_in_domain_test_1, 6, axis=0)
+		class_probs_ood_test_1 = np.repeat(class_probs_ood_test_1, 6, axis=0)
+	class_probs_pc_dict_1 = {
+		'in_domain_train': class_probs_in_domain_train_1.max(axis=1),
+		'in_domain_test': class_probs_in_domain_test_1.max(axis=1),
+		'ood_train': class_probs_ood_train_1.max(axis=1),
+		'ood_test': class_probs_ood_test_1.max(axis=1)
+	}
+
+	# load MNIST DC results
+	class_probs_in_domain_train_drop_1 = np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/output_mnist_train_0.2_None.npy')
+	class_probs_in_domain_test_drop_1 = np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/output_mnist_test_0.2_None.npy')
+	class_probs_ood_train_drop_1 = np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/output_fmnist_train_0.2_None.npy')
+	class_probs_ood_test_drop_1 = np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/output_fmnist_test_0.2_None.npy')
+
+	if density:
+		class_probs_in_domain_test_drop_1 = np.repeat(class_probs_in_domain_test_drop_1, 6, axis=0)
+		class_probs_ood_test_drop_1 = np.repeat(class_probs_ood_test_drop_1, 6, axis=0)
+	dropout_class_probs_dict_1 = {
+		'in_domain_train': np.exp(class_probs_in_domain_train_drop_1.max(axis=1)),
+		'in_domain_test': np.exp(class_probs_in_domain_test_drop_1.max(axis=1)),
+		'ood_train': np.exp(class_probs_ood_train_drop_1.max(axis=1)),
+		'ood_test': np.exp(class_probs_ood_test_drop_1.max(axis=1))
+	}
+
+	###----- gen 4 histograms over 2 rows -----###
+	fig, axes = plt.subplots(nrows=2, ncols=2, sharex=True, sharey=True, figsize=(14, 5), tight_layout=True)
+
+	axes[0][0].hist(class_probs_pc_dict_1['in_domain_train'], label="In-domain (Train)", alpha=0.5, bins=bins,
+					color='green', density=density)
+	axes[0][0].hist(class_probs_pc_dict_1['in_domain_test'], label="In-domain (Test)", alpha=0.5, bins=bins,
+					color='blue', density=density)
+	axes[0][0].hist(class_probs_pc_dict_1['ood_test'], label="OOD (Test)", alpha=0.5, bins=bins,
+					color='red', density=density)
+	axes[0][0].set_title('Probabilistic Circuits')
+	axes[0][0].grid(True)
+
+	axes[0][1].hist(dropout_class_probs_dict_1['in_domain_train'], label="In-domain (Train)", alpha=0.5, bins=bins,
+					color='green', density=density)
+	axes[0][1].hist(dropout_class_probs_dict_1['in_domain_test'], label="In-domain (Test)", alpha=0.5, bins=bins,
+					color='blue', density=density)
+	axes[0][1].hist(dropout_class_probs_dict_1['ood_test'], label="OOD (Test)", alpha=0.5, bins=bins,
+					color='red', density=density)
+	axes[0][1].set_title('Dropout Circuits')
+	axes[0][1].grid(True)
+	axes[0][1].legend(loc=0)
+
+	ax2 = axes[0][1].secondary_yaxis('right')
+	ax2.set_ylabel('Trained on MNIST', color='slategrey', fontweight='bold', fontsize='large')
+	ax2.get_yaxis().set_ticks([])
+
+	###----- F-MNIST plots -----###
+	# load F-MNIST PC results
+	class_probs_in_domain_train = np.load('results/2022-09-14_14-28-01/results/class_probs_in_domain_train.npy')
+	class_probs_in_domain_test = np.load('results/2022-09-14_14-28-01/results/class_probs_in_domain_test.npy')
+	class_probs_ood_train = np.load('results/2022-09-14_14-28-01/results/class_probs_ood_train.npy')
+	class_probs_ood_test = np.load('results/2022-09-14_14-28-01/results/class_probs_ood_test.npy')
+
+	if density:
+		class_probs_in_domain_test = np.repeat(class_probs_in_domain_test, 6, axis=0)
+		class_probs_ood_test = np.repeat(class_probs_ood_test, 6, axis=0)
+	class_probs_pc_dict = {
+		'in_domain_train': class_probs_in_domain_train.max(axis=1),
+		'in_domain_test': class_probs_in_domain_test.max(axis=1),
+		'ood_train': class_probs_ood_train.max(axis=1),
+		'ood_test': class_probs_ood_test.max(axis=1)
+	}
+
+	# load F-MNIST DC results
+	class_probs_in_domain_train_drop = np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_fmnist_train_0.2_None.npy')
+	class_probs_in_domain_test_drop = np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_fmnist_test_0.2_None.npy')
+	class_probs_ood_train_drop = np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_mnist_train_0.2_None.npy')
+	class_probs_ood_test_drop = np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_mnist_test_0.2_None.npy')
+
+	if density:
+		class_probs_in_domain_test_drop = np.repeat(class_probs_in_domain_test_drop, 6, axis=0)
+		class_probs_ood_test_drop = np.repeat(class_probs_ood_test_drop, 6, axis=0)
+	dropout_class_probs_dict = {
+		'in_domain_train': np.exp(class_probs_in_domain_train_drop.max(axis=1)),
+		'in_domain_test': np.exp(class_probs_in_domain_test_drop.max(axis=1)),
+		'ood_train': np.exp(class_probs_ood_train_drop.max(axis=1)),
+		'ood_test': np.exp(class_probs_ood_test_drop.max(axis=1))
+	}
+
+	axes[1][0].hist(class_probs_pc_dict['in_domain_train'], label="In-domain (Train)", alpha=0.5, bins=bins,
+					color='green', density=density)
+	axes[1][0].hist(class_probs_pc_dict['in_domain_test'], label="In-domain (Test)", alpha=0.5, bins=bins,
+					color='blue', density=density)
+	axes[1][0].hist(class_probs_pc_dict['ood_test'], label="OOD (Test)", alpha=0.5, bins=bins,
+					color='red', density=density)
+	axes[1][0].set_ylabel(' ')
+	axes[1][0].grid(True)
+
+	axes[1][1].hist(dropout_class_probs_dict['in_domain_train'], label="In-domain (Train)", alpha=0.5, bins=bins,
+					color='green', density=density)
+	axes[1][1].hist(dropout_class_probs_dict['in_domain_test'], label="In-domain (Test)", alpha=0.5, bins=bins,
+					color='blue', density=density)
+	axes[1][1].hist(dropout_class_probs_dict['ood_test'], label="OOD (Test)", alpha=0.5, bins=bins,
+					color='red', density=density)
+	axes[1][1].grid(True)
+	ax3 = axes[1][1].secondary_yaxis('right')
+	ax3.set_ylabel('Trained on F-MNIST', color='slategrey', fontweight='bold', fontsize='large')
+	ax3.get_yaxis().set_ticks([])
+
+	# Remove labels
+	plt.xlabel(" ", labelpad=None)
+	plt.ylabel(" ", labelpad=None)
+
+	fig.text(0.5, 0.0, "classification confidence", ha="center", va="center", fontsize='large')
+	fig.text(0.0, 0.5, "\# samples", ha="center", va="center", rotation=90, fontsize='large')
+
+	plt.savefig('class_confidence_histograms_pc-dc.png')
+	plt.savefig('class_confidence_histograms_pc-dc.pdf')
+	plt.close()
+
+	###----- gen 2 histograms over 2 rows -----###
+	fig, axes = plt.subplots(nrows=2, ncols=1, sharex=True, sharey=True, figsize=(7, 5), tight_layout=True)
+
+	axes[0].hist(class_probs_pc_dict_1['in_domain_train'], label="In-domain (Train)", alpha=0.5, bins=bins,
+					color='green', density=density)
+	axes[0].hist(class_probs_pc_dict_1['in_domain_test'], label="In-domain (Test)", alpha=0.5, bins=bins,
+					color='blue', density=density)
+	axes[0].hist(class_probs_pc_dict_1['ood_test'], label="OOD (Test)", alpha=0.5, bins=bins,
+					color='red', density=density)
+	axes[0].set_title('Probabilistic Circuits')
+	axes[0].grid(True)
+
+	axes[0].legend(loc=0)
+
+	ax2 = axes[0].secondary_yaxis('right')
+	ax2.set_ylabel('Trained on MNIST', color='slategrey', fontweight='bold', fontsize='large')
+	ax2.get_yaxis().set_ticks([])
+
+	axes[1].hist(class_probs_pc_dict['in_domain_train'], label="In-domain (Train)", alpha=0.5, bins=bins,
+					color='green', density=density)
+	axes[1].hist(class_probs_pc_dict['in_domain_test'], label="In-domain (Test)", alpha=0.5, bins=bins,
+					color='blue', density=density)
+	axes[1].hist(class_probs_pc_dict['ood_test'], label="OOD (Test)", alpha=0.5, bins=bins,
+					color='red', density=density)
+	axes[1].set_ylabel(' ')
+	axes[1].grid(True)
+
+	ax3 = axes[1].secondary_yaxis('right')
+	ax3.set_ylabel('Trained on F-MNIST', color='slategrey', fontweight='bold', fontsize='large')
+	ax3.get_yaxis().set_ticks([])
+
+	# Remove labels
+	plt.xlabel(" ", labelpad=None)
+	plt.ylabel(" ", labelpad=None)
+
+	fig.text(0.5, 0.0, "classification confidence", ha="center", va="center", fontsize='large')
+	fig.text(0.0, 0.5, "\# samples", ha="center", va="center", rotation=90, fontsize='large')
+
+	plt.savefig('class_confidence_histograms_pcs.png')
+	plt.savefig('class_confidence_histograms_pcs.pdf')
+	plt.close()
+
+	# use Seaborn
+	fig, axes = plt.subplots(nrows=2, ncols=1, sharex=True, sharey=True, figsize=(6, 4), tight_layout=True)
+
+	fig.suptitle("Probabilistic Circuits", fontsize=12)
+	axes[1].set_xlabel("classification confidence")
+	axes[0].set_ylabel(" ", labelpad=None)
+	axes[1].set_ylabel(" ", labelpad=None)
+
+	ax1 = axes[0].secondary_yaxis('right')
+	ax1.set_ylabel('Trained on MNIST', color='slategrey', fontweight='bold', fontsize='large')
+	ax1.get_yaxis().set_ticks([])
+
+	ax2 = axes[1].secondary_yaxis('right')
+	ax2.set_ylabel('Trained on F-MNIST', color='slategrey', fontweight='bold', fontsize='large')
+	ax2.get_yaxis().set_ticks([])
+
+	palette = {'In-domain (Train)': "yellow", 'In-domain (Test)': "red", 'OOD (Train)': "cyan"}
+
+	df_in_train = pd.DataFrame({'in_train': class_probs_pc_dict_1['in_domain_train']})
+	df_in_test = pd.DataFrame({'in_test': class_probs_pc_dict_1['in_domain_test']})
+	df_ood_test = pd.DataFrame({'ood_test': class_probs_pc_dict_1['ood_test']})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Train)'}, axis=1)
+
+	p_1 = sns.histplot(data=pd_data, stat="probability", bins=20,
+					   element="bars", common_norm=False, palette=palette, ax=axes[0])
+
+	df_in_train = pd.DataFrame({'in_train': class_probs_pc_dict['in_domain_train']})
+	df_in_test = pd.DataFrame({'in_test': class_probs_pc_dict['in_domain_test']})
+	df_ood_test = pd.DataFrame({'ood_test': class_probs_pc_dict['ood_test']})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Train)'}, axis=1)
+
+	p_2 = sns.histplot(data=pd_data, stat="probability", bins=20,
+					   element="bars", common_norm=False, palette=palette, ax=axes[1])
+
+	axes[1].legend([], [], frameon=False)
+
+	fig.text(0.0, 0.5, "probability", ha="center", va="center", rotation=90, fontsize='large')
+
+	plt.savefig('class_confidence_histograms_pcs_pd.png')
+	plt.savefig('class_confidence_histograms_pcs_pd.pdf')
+	plt.close()
+
+def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
+	# F-MNIST as in-domain dataset
+
+	# load results got from a PC trained w/o dropout (during learning)
+	pc_in_domain_train = np.load('results/2022-09-19_09-34-33/results/class_probs_in_domain_train.npy')
+	pc_in_domain_test = np.load('results/2022-09-19_09-34-33/results/class_probs_in_domain_test.npy')
+	pc_ood_test = np.load('results/2022-09-19_09-34-33/results/class_probs_ood_test.npy')
+
+	# load results form a DC (trained with dropout)
+	dc_in_domain_train = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_fmnist_train_0.2_None.npy'
+	))
+	dc_in_domain_test = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_fmnist_test_0.2_None.npy'
+	))
+	dc_ood_test = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_mnist_test_0.2_None.npy'
+	))
+	dc_ood_test_2 = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_emnist_test_0.2_None.npy'
+	))
+	dc_ood_test_3 = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/output_kmnist_test_0.2_None.npy'
+	))
+
+	dc_in_domain_train_vars = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_fmnist_train_0.2_None.npy'
+	))
+	dc_in_domain_test_vars = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_fmnist_test_0.2_None.npy'
+	))
+	dc_ood_test_vars = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_mnist_test_0.2_None.npy'
+	))
+	dc_ood_test_vars_2 = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_emnist_test_0.2_None.npy'
+	))
+	dc_ood_test_vars_3 = np.exp(np.load(
+		'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_kmnist_test_0.2_None.npy'
+	))
+
+	pred_uncert_in_train = np.take_along_axis(dc_in_domain_train_vars, np.expand_dims(np.argmax(dc_in_domain_train, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_in_test = np.take_along_axis(dc_in_domain_test_vars,
+											 np.expand_dims(np.argmax(dc_in_domain_test, axis=1), axis=1),
+											 axis=1).flatten()
+	pred_uncert_ood_test = np.take_along_axis(dc_ood_test_vars,
+											  np.expand_dims(np.argmax(dc_ood_test, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_ood_test_2 = np.take_along_axis(dc_ood_test_vars_2,
+												np.expand_dims(np.argmax(dc_ood_test_2, axis=1), axis=1),
+												axis=1).flatten()
+	pred_uncert_ood_test_3 = np.take_along_axis(dc_ood_test_vars_3,
+												np.expand_dims(np.argmax(dc_ood_test_3, axis=1), axis=1),
+												axis=1).flatten()
+
+	pred_uncert_in_train = np.sqrt(pred_uncert_in_train)
+	pred_uncert_in_test = np.sqrt(pred_uncert_in_test)
+	pred_uncert_ood_test = np.sqrt(pred_uncert_ood_test)
+	pred_uncert_ood_test_2 = np.sqrt(pred_uncert_ood_test_2)
+	pred_uncert_ood_test_3 = np.sqrt(pred_uncert_ood_test_3)
+
+	if plot_entropy:
+		pc_in_domain_train = entropy(pc_in_domain_train, axis=1)
+		pc_in_domain_test = entropy(pc_in_domain_test, axis=1)
+		pc_ood_test = entropy(pc_ood_test, axis=1)
+
+		dc_in_domain_train = entropy(dc_in_domain_train, axis=1)
+		dc_in_domain_test = entropy(dc_in_domain_test, axis=1)
+		dc_ood_test = entropy(dc_ood_test, axis=1)
+		dc_ood_test_2 = entropy(dc_ood_test_2, axis=1)
+		dc_ood_test_3 = entropy(dc_ood_test_3, axis=1)
+	else:
+		pc_in_domain_train = pc_in_domain_train.max(axis=1)
+		pc_in_domain_test = pc_in_domain_test.max(axis=1)
+		pc_ood_test = pc_ood_test.max(axis=1)
+
+		dc_in_domain_train = dc_in_domain_train.max(axis=1)
+		dc_in_domain_test = dc_in_domain_test.max(axis=1)
+		dc_ood_test = dc_ood_test.max(axis=1)
+		dc_ood_test_2 = dc_ood_test_2.max(axis=1)
+		dc_ood_test_3 = dc_ood_test_3.max(axis=1)
+
+
+
+
+	fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 5), tight_layout=True)
+
+	palette_pc = {'In-domain (F-MNIST Train)': "yellow", 'In-domain (F-MNIST Test)': "red", 'OOD (MNIST Test)': "cyan"}
+	# palette_dc = {'In-domain (F-MNIST Train)': "yellow", 'In-domain (F-MNIST Test)': "red", 'OOD (MNIST Test)': "cyan",
+	# 			  'OOD (E-MNIST Test)': "blue", 'OOD (K-MNIST Test)': "green"}
+	palette_dc = {'In-domain (F-MNIST Train)': "yellow", 'In-domain (F-MNIST Test)': "red", 'OOD (MNIST Test)': "cyan",
+				  'OOD (E-MNIST Test)': "green", 'OOD (K-MNIST Test)': "blue"}
+
+	df_in_train = pd.DataFrame({'in_train': pc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': pc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': pc_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)', 2: 'OOD (MNIST Test)'}, axis=1)
+
+	if not plot_entropy:
+		axes[0].set_xlim(0.2, 1.)
+		axes[1].set_xlim(0.2, 1.)
+
+		axes[0].set_ylim(0.0, 1.)
+		axes[1].set_ylim(0.0, 1.)
+
+	plot_kind = 'Predictive Entropy' if plot_entropy else 'Classification Confidence'
+	axes[0].set_title('Probabilistic Circuit ({})'.format(plot_kind))
+	axes[1].set_title('Dropout Circuit ({})'.format(plot_kind))
+	axes[2].set_title('Dropout Circuit (Uncertainty)')
+
+	axes[0].set_xlabel(plot_kind)
+	axes[1].set_xlabel(plot_kind)
+	axes[2].set_xlabel('Predictive Uncertainty (STD)')
+
+	if kde_plot:
+		p_1 = sns.kdeplot(data=pd_data, palette=palette_pc, ax=axes[0])
+	else:
+		p_1 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+						   element="bars", common_norm=False, palette=palette_pc, ax=axes[0])
+
+	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test})
+	df_ood_test_2 = pd.DataFrame({'ood_test_2': dc_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test_3': dc_ood_test_3})
+	# pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
+	# pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)',
+	# 						  2: 'OOD (MNIST Test)', 3: 'OOD (E-MNIST Test)', 4: 'OOD (K-MNIST Test)'}, axis=1)
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)',
+							  2: 'OOD (MNIST Test)', 3: 'OOD (E-MNIST Test)', 4: 'OOD (K-MNIST Test)'}, axis=1)
+
+	if kde_plot:
+		p_2 = sns.kdeplot(data=pd_data, palette=palette_dc, ax=axes[1])
+	else:
+		p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+						   element="bars", common_norm=False, palette=palette_dc, ax=axes[1])
+
+	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
+	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
+	df_ood_test = pd.DataFrame({'ood_test': pred_uncert_ood_test})
+	df_ood_test_2 = pd.DataFrame({'ood_test': pred_uncert_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test': pred_uncert_ood_test_3})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
+	# pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Test)'}, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)',
+							  2: 'OOD (MNIST Test)', 3: 'OOD (E-MNIST Test)', 4: 'OOD (K-MNIST Test)'}, axis=1)
+
+	axes[2].set_xlim(0, 0.25)
+
+	if kde_plot:
+		p_3 = sns.kdeplot(data=pd_data, palette=palette_dc, ax=axes[2])
+	else:
+		p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+						   element="bars", common_norm=False, palette=palette_dc, ax=axes[2])
+
+	kde_string = '_kde' if kde else ''
+	kde_string = '_kde_plot' if kde_plot else kde_string
+
+	entropy_string = '_entropy' if plot_entropy else ''
+
+	plt.savefig('paper_fig1_fmnist{}{}.png'.format(kde_string, entropy_string))
+	plt.savefig('paper_fig1_fmnist{}{}.pdf'.format(kde_string, entropy_string))
+	plt.close()
+
+
+def gen_figure1_mnist(kde=False):
+	# MNIST as in-domain dataset
+
+	# load results got from a PC trained w/o dropout (during learning)
+	pc_in_domain_train = np.load('results/2022-09-23_16-07-21/results/class_probs_in_domain_train.npy').max(axis=1)
+	pc_in_domain_test = np.load('results/2022-09-23_16-07-21/results/class_probs_in_domain_test.npy').max(axis=1)
+	pc_ood_test = np.load('results/2022-09-23_16-07-21/results/class_probs_ood_test.npy').max(axis=1)
+
+	# load results form a DC (trained with dropout)
+	dc_in_domain_train = np.exp(np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/output_mnist_train_0.2_None.npy'
+	))
+	dc_in_domain_test = np.exp(np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/output_mnist_test_0.2_None.npy'
+	))
+	dc_ood_test = np.exp(np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/output_fmnist_test_0.2_None.npy'
+	))
+
+	dc_in_domain_train_vars = np.exp(np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/var_mnist_train_0.2_None.npy'
+	))
+	dc_in_domain_test_vars = np.exp(np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/var_mnist_test_0.2_None.npy'
+	))
+	dc_ood_test_vars = np.exp(np.load(
+		'results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/var_fmnist_test_0.2_None.npy'
+	))
+
+	pred_uncert_in_train = np.take_along_axis(dc_in_domain_train_vars, np.expand_dims(np.argmax(dc_in_domain_train, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_in_test = np.take_along_axis(dc_in_domain_test_vars,
+											 np.expand_dims(np.argmax(dc_in_domain_test, axis=1), axis=1),
+											 axis=1).flatten()
+	pred_uncert_ood_test = np.take_along_axis(dc_ood_test_vars,
+											  np.expand_dims(np.argmax(dc_ood_test, axis=1), axis=1),
+											  axis=1).flatten()
+
+	dc_in_domain_train = dc_in_domain_train.max(axis=1)
+	dc_in_domain_test = dc_in_domain_test.max(axis=1)
+	dc_ood_test = dc_ood_test.max(axis=1)
+
+
+
+
+	fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 5), tight_layout=True)
+
+	palette = {'In-domain (Train)': "yellow", 'In-domain (Test)': "red", 'OOD (Test)': "cyan"}
+
+	df_in_train = pd.DataFrame({'in_train': pc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': pc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': pc_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Test)'}, axis=1)
+
+	axes[0].set_xlim(0.2, 1.)
+	axes[1].set_xlim(0.2, 1.)
+
+	p_1 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[0])
+
+	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Test)'}, axis=1)
+
+	p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[1])
+
+	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
+	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
+	df_ood_test = pd.DataFrame({'ood_test': pred_uncert_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Test)'}, axis=1)
+
+	axes[2].set_xlim(0, 0.08)
+	p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[2])
+
+	kde_string = '_kde' if kde else ''
+	plt.savefig('paper_fig1_mnist{}.png'.format(kde_string))
+	plt.savefig('paper_fig1_mnist{}.pdf'.format(kde_string))
+	plt.close()
+
+def gen_figure1_svhn(kde=False, plot_entropy=False):
+	# SVHN as in-domain dataset
+
+	# load results got from a PC trained w/o dropout (during learning)
+	# pc_in_domain_train = np.load('results/2022-09-23_16-07-21/results/class_probs_in_domain_train.npy').max(axis=1)
+	# pc_in_domain_test = np.load('results/2022-09-23_16-07-21/results/class_probs_in_domain_test.npy').max(axis=1)
+	# pc_ood_test = np.load('results/2022-09-23_16-07-21/results/class_probs_ood_test.npy').max(axis=1)
+
+	# load results form a DC (trained with dropout)
+	dc_in_domain_train = np.exp(np.load(
+		'results//2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_train_0.1_None.npy'
+	))
+	dc_in_domain_test = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_test_0.1_None.npy'
+	))
+	dc_ood_test = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar_test_0.1_None.npy'
+	))
+
+	dc_in_domain_train_vars = np.exp(np.load(
+		'results//2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_svhn_train_0.1_None.npy'
+	))
+	dc_in_domain_test_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_svhn_test_0.1_None.npy'
+	))
+	dc_ood_test_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_cifar_test_0.1_None.npy'
+	))
+
+	pred_uncert_in_train = np.take_along_axis(dc_in_domain_train_vars, np.expand_dims(np.argmax(dc_in_domain_train, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_in_test = np.take_along_axis(dc_in_domain_test_vars,
+											 np.expand_dims(np.argmax(dc_in_domain_test, axis=1), axis=1),
+											 axis=1).flatten()
+	pred_uncert_ood_test = np.take_along_axis(dc_ood_test_vars,
+											  np.expand_dims(np.argmax(dc_ood_test, axis=1), axis=1),
+											  axis=1).flatten()
+
+
+	if plot_entropy:
+		dc_in_domain_train = entropy(dc_in_domain_train, axis=1)
+		dc_in_domain_test = entropy(dc_in_domain_test, axis=1)
+		dc_ood_test = entropy(dc_ood_test, axis=1)
+	else:
+		dc_in_domain_train = dc_in_domain_train.max(axis=1)
+		dc_in_domain_test = dc_in_domain_test.max(axis=1)
+		dc_ood_test = dc_ood_test.max(axis=1)
+
+	pred_uncert_in_train = np.sqrt(pred_uncert_in_train)
+	pred_uncert_in_test = np.sqrt(pred_uncert_in_test)
+	pred_uncert_ood_test = np.sqrt(pred_uncert_ood_test)
+
+	fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 5), tight_layout=True)
+
+	palette = {'In-domain (SVHN Train)': "yellow", 'In-domain (SVHN Test)': "red", 'OOD (CIFAR-10 Test)': "cyan"}
+
+	# df_in_train = pd.DataFrame({'in_train': pc_in_domain_train})
+	# df_in_test = pd.DataFrame({'in_test': pc_in_domain_test})
+	# df_ood_test = pd.DataFrame({'ood_test': pc_ood_test})
+	# pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	# pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Test)'}, axis=1)
+
+	if not plot_entropy:
+		axes[0].set_xlim(0.0, 1.)
+		# axes[1].set_xlim(0.2, 1.)
+
+
+	plot_kind = 'Predictive Entropy' if plot_entropy else 'Classification Confidence'
+	# axes[0].set_title('Probabilistic Circuit ({})'.format(plot_kind))
+	axes[0].set_title('Dropout Circuit ({})'.format(plot_kind))
+	axes[1].set_title('Dropout Circuit (Uncertainty)')
+
+	axes[0].set_xlabel(plot_kind)
+	axes[1].set_xlabel('Predictive Uncertainty (STD)')
+
+	# p_1 = sns.histplot(data=pd_data, stat="probability", bins=20,
+	# 				   element="bars", common_norm=False, palette=palette, ax=axes[0])
+	#
+	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+
+
+	p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[0])
+
+	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
+	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
+	df_ood_test = pd.DataFrame({'ood_test': pred_uncert_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+
+
+	axes[1].set_xlim(0, .25)
+	p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[1])
+
+	kde_string = '_kde' if kde else ''
+	entropy_string = '_entropy' if plot_entropy else ''
+
+	plt.savefig('paper_fig1_svhn{}{}.png'.format(kde_string, entropy_string))
+	plt.savefig('paper_fig1_svhn{}{}.pdf'.format(kde_string, entropy_string))
+	plt.close()
+
+
+	### additional histogram plots ###
+	fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 5), tight_layout=True)
+
+	# load results form a DC (trained with dropout)
+	dc_in_domain_train = np.load(
+		'results//2022-09-19_23-07-08/model/post_hoc_results/closed_form/heads_x_svhn_test_0.1_None.npy'
+	)
+	dc_in_domain_test = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/heads_x_svhn_test_0.1_None.npy'
+	)
+	dc_ood_test = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/heads_x_cifar_test_0.1_None.npy'
+	)
+
+	dc_in_domain_train_vars = np.load(
+		'results//2022-09-19_23-07-08/model/post_hoc_results/closed_form/heads_vars_svhn_test_0.1_None.npy'
+	)
+	dc_in_domain_test_vars = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/heads_vars_svhn_test_0.1_None.npy'
+	)
+	dc_ood_test_vars = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/heads_vars_cifar_test_0.1_None.npy'
+	)
+
+	dc_in_domain_train_llx = np.load(
+		'results//2022-09-19_23-07-08/model/post_hoc_results/closed_form/ll_x_svhn_test_0.1_None.npy'
+	)
+	dc_in_domain_test_llx = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/ll_x_svhn_test_0.1_None.npy'
+	)
+	dc_ood_test_llx = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/ll_x_cifar_test_0.1_None.npy'
+	)
+
+	breakpoint()
+
+	# TODO this could be wrong, we should probably apply the formula for summing up STDs
+	# pred_uncert_in_train = np.sqrt(dc_in_domain_train_vars)
+	# pred_uncert_in_test = np.sqrt(dc_in_domain_test_vars)
+	# pred_uncert_ood_test = np.sqrt(dc_ood_test_vars)
+	# pred_uncert_in_train = dc_in_domain_train_vars * 0.5
+	# pred_uncert_in_test = dc_in_domain_test_vars * 0.5
+	# pred_uncert_ood_test = dc_ood_test_vars * 0.5
+
+	pred_uncert_in_train = dc_in_domain_train_vars.sum(axis=1)
+	pred_uncert_in_test = dc_in_domain_test_vars.sum(axis=1)
+	pred_uncert_ood_test = dc_ood_test_vars.sum(axis=1)
+
+	dc_in_domain_train = dc_in_domain_train.max(axis=1)
+	dc_in_domain_test = dc_in_domain_test.max(axis=1)
+	dc_ood_test = dc_ood_test.max(axis=1)
+
+	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'},
+							 axis=1)
+
+	p_2 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[0])
+
+	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
+	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
+	df_ood_test = pd.DataFrame({'ood_test': pred_uncert_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'},
+							 axis=1)
+
+	# axes[1].set_xlim(0, .25)
+	p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[1])
+
+	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train_llx})
+	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test_llx})
+	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test_llx})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'},
+							 axis=1)
+
+	p_4 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[2])
+
+	axes[0].set_title('Dropout Circuits')
+	axes[1].set_title('Dropout Circuits')
+	axes[2].set_title('Dropout Circuits')
+
+	axes[0].set_xlabel('max p(x|y)')
+	axes[1].set_xlabel('sum of variance')
+	axes[2].set_xlabel('p(x)')
+
+
+
+	plt.savefig('paper_fig1_svhn_pxy.png')
+	plt.savefig('paper_fig1_svhn_pxy.pdf')
+	plt.close()
+
+
 if __name__ == "__main__":
-    test_cf()
-    gen_lls_histograms_cf('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_fmnist_0.2_None.npy',
-						  'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_mnist_0.2_None.npy')
+	# test_cf()
+	# gen_class_probs_histograms()
+	# plot_with_kde = True
+	# gen_figure1_fmnist(kde=True, kde_plot=False, plot_entropy=True)
+	# gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=True)
+	# gen_figure1_mnist(kde=plot_with_kde)
+	# gen_figure1_svhn(kde=False, plot_entropy=True)
+	gen_figure1_svhn(kde=True, plot_entropy=True)
+	sys.exit()
+	# gen_lls_histograms_cf('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_fmnist_0.2_None.npy',
+	# 					  'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_mnist_0.2_None.npy')
 
-    var_x_in = np.load('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_x_fmnist_0.2_None.npy').flatten()
-    var_x_ood = np.load('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_x_mnist_0.2_None.npy').flatten()
+	# var_x_in = np.load('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_x_fmnist_0.2_None.npy').flatten()
+	# var_x_ood = np.load('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/var_x_mnist_0.2_None.npy').flatten()
+	#
+	# cf_std_ll_in = (scipy.special.logsumexp(var_x_in) - 10000) / 2
+	# cf_std_ll_ood = (scipy.special.logsumexp(var_x_ood) - 10000) / 2
+	# ic(cf_std_ll_in)
+	# ic(cf_std_ll_ood)
+	#
+	# gen_lls_histograms_mcd('results/2022-09-14_14-28-01/results/test_lls_dropout_in_domain_heads.npy',
+	# 					   'results/2022-09-14_14-28-01/results/test_lls_dropout_ood_heads.npy')
+	# gen_lls_histograms_pc('results/2022-09-14_14-28-01/results/likelihoods/test_lls.npy',
+	# 					  'results/2022-09-14_14-28-01/results/likelihoods/other_test_lls.npy')
+	# sys.exit()
 
-    cf_std_ll_in = (scipy.special.logsumexp(var_x_in) - 10000 ) / 2
-    cf_std_ll_ood = (scipy.special.logsumexp(var_x_ood) - 10000 ) / 2
-    ic(cf_std_ll_in)
-    ic(cf_std_ll_ood)
+	# d_results_p01 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
+	# d_results_p02 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
+	# gen_plot_conf_vs_acc_auto(d_results_p01, "acc_vs_conf_mcd_p_01")
+	# gen_plot_conf_vs_acc_auto(d_results_p02, "acc_vs_conf_mcd_p_02")
+	# sys.exit()
 
-    gen_lls_histograms_mcd('results/2022-09-14_14-28-01/results/test_lls_dropout_in_domain_heads.npy',
-						   'results/2022-09-14_14-28-01/results/test_lls_dropout_ood_heads.npy')
-    gen_lls_histograms_pc('results/2022-09-14_14-28-01/results/likelihoods/test_lls.npy',
-						  'results/2022-09-14_14-28-01/results/likelihoods/other_test_lls.npy')
-    sys.exit()
-
-    d_results_p01 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
-    d_results_p02 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
-    gen_plot_conf_vs_acc_auto(d_results_p01, "acc_vs_conf_mcd_p_01")
-    gen_plot_conf_vs_acc_auto(d_results_p02, "acc_vs_conf_mcd_p_02")
-    sys.exit()
-
-    sort_idxs = gen_plot_conf_vs_acc_corrupted_svhn('/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-05-15_00-45-40/model/post_hoc_results/svhn_c/',
-    												filename='acc_vs_conf_mcd_p_02_SVHN_C_sort_new')
-    plot_multiple_boxplots_svhn_c('/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-05-15_00-45-40/model/post_hoc_results/svhn_c/',
+	sort_idxs = gen_plot_conf_vs_acc_corrupted_svhn('/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-05-15_00-45-40/model/post_hoc_results/svhn_c/',
+													filename='acc_vs_conf_mcd_p_02_SVHN_C_sort_new')
+	plot_multiple_boxplots_svhn_c('/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-05-15_00-45-40/model/post_hoc_results/svhn_c/',
 								  sort_idxs=sort_idxs)
-    gen_plot_conf_vs_acc_svhn_c_single('/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-05-15_00-45-40/model/post_hoc_results/svhn_c/',
+	gen_plot_conf_vs_acc_svhn_c_single('/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-05-15_00-45-40/model/post_hoc_results/svhn_c/',
 									   filename='SVHN_conf_v_acc_corr_single_')
-    sys.exit()
+	sys.exit()
 
 	# gen_lls_histograms('/Users/fabrizio/Desktop/results/2022-05-16_16-10-50/model/likelihoods/', filename="data_lls_fmnist_lambda_0.pdf")
-    # gen_lls_histograms('/Users/fabrizio/Desktop/results 2/2022-05-16_04-34-36/model/likelihoods/', filename="data_lls_fmnist_lambda_0_2.pdf")
-    gen_lls_histograms('/Users/fabrizio/research/exps_cache/mcd/2022-06-02_23-13-30/results/likelihoods/', filename="data_lls_fmnist_lambda_0_2_j3_1.pdf")
-    gen_lls_histograms('/Users/fabrizio/research/exps_cache/mcd/2022-06-03_04-57-49/results/likelihoods/', filename="data_lls_fmnist_lambda_0_2_j3_2.pdf")
-    sys.exit()
-    gen_histograms()
-    # cond_means_pandas()
-    # sort_idxs = gen_plot_conf_vs_acc_corrupted('/Users/fabrizio/Documents/2022-04-29_21-27-25_mnist-c/results/')
-    # plot_multiple_boxplots_mnist_c('/Users/fabrizio/Documents/2022-04-29_21-27-25_mnist-c/results/', sort_idxs=sort_idxs)
-    # gen_plot_conf_vs_acc_corrupted_single('/Users/fabrizio/Desktop/2022-05-11_16-12-31/results/', filename='conf_v_acc_corr_single_')
-    # sys.exit()
+	# gen_lls_histograms('/Users/fabrizio/Desktop/results 2/2022-05-16_04-34-36/model/likelihoods/', filename="data_lls_fmnist_lambda_0_2.pdf")
+	gen_lls_histograms('/Users/fabrizio/research/exps_cache/mcd/2022-06-02_23-13-30/results/likelihoods/', filename="data_lls_fmnist_lambda_0_2_j3_1.pdf")
+	gen_lls_histograms('/Users/fabrizio/research/exps_cache/mcd/2022-06-03_04-57-49/results/likelihoods/', filename="data_lls_fmnist_lambda_0_2_j3_2.pdf")
+	sys.exit()
+	gen_histograms()
+	# cond_means_pandas()
+	# sort_idxs = gen_plot_conf_vs_acc_corrupted('/Users/fabrizio/Documents/2022-04-29_21-27-25_mnist-c/results/')
+	# plot_multiple_boxplots_mnist_c('/Users/fabrizio/Documents/2022-04-29_21-27-25_mnist-c/results/', sort_idxs=sort_idxs)
+	# gen_plot_conf_vs_acc_corrupted_single('/Users/fabrizio/Desktop/2022-05-11_16-12-31/results/', filename='conf_v_acc_corr_single_')
+	# sys.exit()
 
-    nn_accuracy_vs_confidence()
-    #d_results = '/Users/fabrizio/Documents/2022-03-25_11-38-35/results/'
-    # d_results = '/Users/fabrizio/Desktop/2022-04-04_20-09-44/results/'
-    # d_results_p01 = ' /home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/'
-    # d_results_p02 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
-    # gen_plot_conf_vs_acc_auto(d_results_p01, "acc_vs_conf_mcd_p_01")
-    # gen_plot_conf_vs_acc_auto(d_results_p02, "acc_vs_conf_mcd_p_02")
-    # plot_multiple_boxplots_rotatiing_digits(d_results)
+	nn_accuracy_vs_confidence()
+	#d_results = '/Users/fabrizio/Documents/2022-03-25_11-38-35/results/'
+	# d_results = '/Users/fabrizio/Desktop/2022-04-04_20-09-44/results/'
+	# d_results_p01 = ' /home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/'
+	# d_results_p02 = '/home/fabrizio/research/mc_dropout/SPFlow/src/spn/experiments/RandomSPNs_layerwise/results/2022-04-08_11-29-28/results/'
+	# gen_plot_conf_vs_acc_auto(d_results_p01, "acc_vs_conf_mcd_p_01")
+	# gen_plot_conf_vs_acc_auto(d_results_p02, "acc_vs_conf_mcd_p_02")
+	# plot_multiple_boxplots_rotatiing_digits(d_results)
 
-    #idx_ary = [0, 110, 340, 10, 345, 3, 234, 34, 56, 90, 765, 562, 10, 20, 40, 50, 60, 90]
-    #plot_some_mnist_digits(element_idx=idx_ary, d_results=d_results)
-    sys.exit()
+	#idx_ary = [0, 110, 340, 10, 345, 3, 234, 34, 56, 90, 765, 562, 10, 20, 40, 50, 60, 90]
+	#plot_some_mnist_digits(element_idx=idx_ary, d_results=d_results)
+	sys.exit()
 
-    # gen_boxplots('/Users/fabrizio/Desktop/2022-03-25_11-38-35/results/')
-    #plot_multiple_boxplots_rotatiing_digits('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/')
-    #gen_histograms()
-    #gen_plot_conf_vs_acc()
-    #sys.exit()
+	# gen_boxplots('/Users/fabrizio/Desktop/2022-03-25_11-38-35/results/')
+	#plot_multiple_boxplots_rotatiing_digits('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/')
+	#gen_histograms()
+	#gen_plot_conf_vs_acc()
+	#sys.exit()
 
-    class_probs_in_domain_train = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_in_domain_train.npy').max(axis=1)
-    class_probs_in_domain_test = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_in_domain_test.npy').max(axis=1)
-    class_probs_ood_train = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_ood_train.npy').max(axis=1)
-    class_probs_ood_test = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_ood_test.npy').max(axis=1)
+	class_probs_in_domain_train = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_in_domain_train.npy').max(axis=1)
+	class_probs_in_domain_test = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_in_domain_test.npy').max(axis=1)
+	class_probs_ood_train = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_ood_train.npy').max(axis=1)
+	class_probs_ood_test = np.load('/Users/fabrizio/Documents/2022-03-25_11-38-35/results/class_probs_ood_test.npy').max(axis=1)
 
-    df_in_train = pd.DataFrame({'class_probs_in_domain_train':class_probs_in_domain_train})
-    df_in_test = pd.DataFrame({'class_probs_in_domain_test':class_probs_in_domain_test})
-    df_ood_train = pd.DataFrame({'class_probs_ood_train':class_probs_ood_train})
-    df_ood_test = pd.DataFrame({'class_probs_ood_test':class_probs_ood_test})
+	df_in_train = pd.DataFrame({'class_probs_in_domain_train':class_probs_in_domain_train})
+	df_in_test = pd.DataFrame({'class_probs_in_domain_test':class_probs_in_domain_test})
+	df_ood_train = pd.DataFrame({'class_probs_ood_train':class_probs_ood_train})
+	df_ood_test = pd.DataFrame({'class_probs_ood_test':class_probs_ood_test})
 
-    data = pd.concat([df_in_train, df_in_test, df_ood_train, df_ood_test], ignore_index=True, axis=1)
-    data = data.rename({0:'MNIST Train (In-domain)', 1:'MNIST Test (In-domain)', 2:'F-MNIST Train (OOD)', 3:'F-MNIST Test (OOD)'}, axis=1)
+	data = pd.concat([df_in_train, df_in_test, df_ood_train, df_ood_test], ignore_index=True, axis=1)
+	data = data.rename({0:'MNIST Train (In-domain)', 1:'MNIST Test (In-domain)', 2:'F-MNIST Train (OOD)', 3:'F-MNIST Test (OOD)'}, axis=1)
 
-    #print(data)
-
-
-    #data = np.column_stack((class_probs_in_domain_train, class_probs_in_domain_test, class_probs_ood_train, class_probs_ood_test))
-    #data1 = pd.DataFrame({'in_train':class_probs_in_domain_train, 'in_test':class_probs_in_domain_test, 'ood_train':class_probs_ood_train, 'ood_test':class_probs_ood_test}, index=np.arange(60000))
+	#print(data)
 
 
-    #p1 = sns.histplot(data=data, bins=10, multiple='layer')
-    #fig1 = p1.get_figure()
-    #fig1.savefig("confidence_histograms_mnist.pdf")
+	#data = np.column_stack((class_probs_in_domain_train, class_probs_in_domain_test, class_probs_ood_train, class_probs_ood_test))
+	#data1 = pd.DataFrame({'in_train':class_probs_in_domain_train, 'in_test':class_probs_in_domain_test, 'ood_train':class_probs_ood_train, 'ood_test':class_probs_ood_test}, index=np.arange(60000))
 
 
-    class_probs_in_domain_train = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_in_domain_train.npy').max(axis=1)
-    class_probs_in_domain_test = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_in_domain_test.npy').max(axis=1)
-    class_probs_ood_train = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_ood_train.npy').max(axis=1)
-    class_probs_ood_test = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_ood_test.npy').max(axis=1)
+	#p1 = sns.histplot(data=data, bins=10, multiple='layer')
+	#fig1 = p1.get_figure()
+	#fig1.savefig("confidence_histograms_mnist.pdf")
 
 
-    df_in_train = pd.DataFrame({'class_probs_in_domain_train':class_probs_in_domain_train})
-    df_in_test = pd.DataFrame({'class_probs_in_domain_test':class_probs_in_domain_test})
-    df_ood_train = pd.DataFrame({'class_probs_ood_train':class_probs_ood_train})
-    df_ood_test = pd.DataFrame({'class_probs_ood_test':class_probs_ood_test})
-
-    data_ary = [df_in_train, df_in_test, df_ood_train, df_ood_test]
-    #data_ary = [df_in_train, df_ood_train]
-
-    data = pd.concat([df_in_train, df_in_test, df_ood_train, df_ood_test], ignore_index=True, axis=1)
-    data = data.rename({0:'F-MNIST Train (In-domain)', 1:'F-MNIST Test (In-domain)', 2:'MNIST Train (OOD)', 3:'MNIST Test (OOD)'}, axis=1)
-
-    #data = pd.concat([df_in_train, df_ood_train], ignore_index=True, axis=1)
-    #data = data.rename({0:'F-MNIST Train (In-domain)', 1:'MNIST Train (OOD)'}, axis=1)
-    #print(data)
-
-    #df_melted = data.melt(var_name='column')
-
-    #p2 = sns.histplot(data=data, bins=10, multiple='layer')
-    #fig2 = p1.get_figure()
-    #fig2.savefig("confidence_histograms_fmnist.pdf")
-
-    #sns.set(color_codes=True)
-    #sns.set(style="white", palette="muted")
-
-    #sns.distplot(data)
-
-    #plt.figure()
-    #for col in data:
-    #    sns.distplot(col, hist=True)
-    #plt.savefig('test_distplot.pdf')
-
-    print(data)
-
-    #sns.color_palette("Paired")
-    palette ={"F-MNIST Train (In-domain)": "green", "F-MNIST Test (In-domain)": "C0", "MNIST Train (OOD)": "yellow", "MNIST Test (OOD)": "red"}
-    #p3 = sns.histplot(data=data, x='value', hue='column',  bins=50, multiple='layer', kde=True)
-    p3 = sns.histplot(data=data, bins=50, multiple='layer', palette=palette, cbar_kws={'alpha':0.3})
-    #p3 = sns.distplot(df_melted,  bins=50)
-    p3.set(xlabel='Classification confidence', ylabel='# samples')
-    #p3 = sns.histplot(data=data, bins=20, multiple='layer')
-    fig3 = p3.get_figure()
-    fig3.savefig("confidence_histograms_fmnist_3.pdf")
+	class_probs_in_domain_train = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_in_domain_train.npy').max(axis=1)
+	class_probs_in_domain_test = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_in_domain_test.npy').max(axis=1)
+	class_probs_ood_train = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_ood_train.npy').max(axis=1)
+	class_probs_ood_test = np.load('/Users/fabrizio/Documents/2022-03-25_19-00-15/results/class_probs_ood_test.npy').max(axis=1)
 
 
-    #plt.hist(class_probs_in_domain_train, label="In-domain (Train)", alpha=0.5, bins=30, color='green')
-    #plt.hist(class_probs_ood_train, label="OOD (Train)", alpha=0.5, bins=30, color='orange')
-    #plt.hist(class_probs_in_domain_test, label="In-domain (Test)", alpha=0.5, bins=30, color='blue')
-    #plt.hist(class_probs_ood_test, label="OOD (Test)", alpha=0.5, bins=30, color='red')
+	df_in_train = pd.DataFrame({'class_probs_in_domain_train':class_probs_in_domain_train})
+	df_in_test = pd.DataFrame({'class_probs_in_domain_test':class_probs_in_domain_test})
+	df_ood_train = pd.DataFrame({'class_probs_ood_train':class_probs_ood_train})
+	df_ood_test = pd.DataFrame({'class_probs_ood_test':class_probs_ood_test})
 
-    #plt.ylabel('# samples')
-    #plt.xlabel('Classification confidence')
+	data_ary = [df_in_train, df_in_test, df_ood_train, df_ood_test]
+	#data_ary = [df_in_train, df_ood_train]
 
-    #plt.legend(loc=0)
-    #plt.title("histogram")
+	data = pd.concat([df_in_train, df_in_test, df_ood_train, df_ood_test], ignore_index=True, axis=1)
+	data = data.rename({0:'F-MNIST Train (In-domain)', 1:'F-MNIST Test (In-domain)', 2:'MNIST Train (OOD)', 3:'MNIST Test (OOD)'}, axis=1)
 
-    #plt.savefig('histo_tmp.pdf')
-    #plt.close()
+	#data = pd.concat([df_in_train, df_ood_train], ignore_index=True, axis=1)
+	#data = data.rename({0:'F-MNIST Train (In-domain)', 1:'MNIST Train (OOD)'}, axis=1)
+	#print(data)
+
+	#df_melted = data.melt(var_name='column')
+
+	#p2 = sns.histplot(data=data, bins=10, multiple='layer')
+	#fig2 = p1.get_figure()
+	#fig2.savefig("confidence_histograms_fmnist.pdf")
+
+	#sns.set(color_codes=True)
+	#sns.set(style="white", palette="muted")
+
+	#sns.distplot(data)
+
+	#plt.figure()
+	#for col in data:
+	#    sns.distplot(col, hist=True)
+	#plt.savefig('test_distplot.pdf')
+
+	print(data)
+
+	#sns.color_palette("Paired")
+	palette ={"F-MNIST Train (In-domain)": "green", "F-MNIST Test (In-domain)": "C0", "MNIST Train (OOD)": "yellow", "MNIST Test (OOD)": "red"}
+	#p3 = sns.histplot(data=data, x='value', hue='column',  bins=50, multiple='layer', kde=True)
+	p3 = sns.histplot(data=data, bins=50, multiple='layer', palette=palette, cbar_kws={'alpha':0.3})
+	#p3 = sns.distplot(df_melted,  bins=50)
+	p3.set(xlabel='Classification confidence', ylabel='# samples')
+	#p3 = sns.histplot(data=data, bins=20, multiple='layer')
+	fig3 = p3.get_figure()
+	fig3.savefig("confidence_histograms_fmnist_3.pdf")
+
+
+	#plt.hist(class_probs_in_domain_train, label="In-domain (Train)", alpha=0.5, bins=30, color='green')
+	#plt.hist(class_probs_ood_train, label="OOD (Train)", alpha=0.5, bins=30, color='orange')
+	#plt.hist(class_probs_in_domain_test, label="In-domain (Test)", alpha=0.5, bins=30, color='blue')
+	#plt.hist(class_probs_ood_test, label="OOD (Test)", alpha=0.5, bins=30, color='red')
+
+	#plt.ylabel('# samples')
+	#plt.xlabel('Classification confidence')
+
+	#plt.legend(loc=0)
+	#plt.title("histogram")
+
+	#plt.savefig('histo_tmp.pdf')
+	#plt.close()
 
