@@ -2845,9 +2845,29 @@ def gen_figure1_svhn(kde=False, plot_entropy=False):
 	# SVHN as in-domain dataset
 
 	# load results got from a PC trained w/o dropout (during learning)
-	# pc_in_domain_train = np.load('results/2022-09-23_16-07-21/results/class_probs_in_domain_train.npy').max(axis=1)
-	# pc_in_domain_test = np.load('results/2022-09-23_16-07-21/results/class_probs_in_domain_test.npy').max(axis=1)
-	# pc_ood_test = np.load('results/2022-09-23_16-07-21/results/class_probs_ood_test.npy').max(axis=1)
+	pc_in_domain_train = np.load('results/2022-09-25_19-24-15/results/class_probs_in_domain_train.npy')
+	pc_in_domain_test = np.load('results/2022-09-25_19-24-15/results/class_probs_in_domain_test.npy')
+	pc_ood_test = np.load('results/2022-09-25_19-24-15/results/class_probs_ood_test.npy')
+
+	# load results for CF dropout on a PC trained w/o dropout (during learning)
+	pc_cf_in_domain_train = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_svhn_train_1.0_0.0_0.1_None.npy'))
+	pc_cf_in_domain_test = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_svhn_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cifar_test_1.0_0.0_0.1_None.npy'))
+
+	pc_cf_in_domain_train_vars = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_svhn_train_1.0_0.0_0.1_None.npy'))
+	pc_cf_in_domain_test_vars = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_svhn_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_vars = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_cifar_test_1.0_0.0_0.1_None.npy'))
+
+	pc_cf_pred_uncert_in_train = np.take_along_axis(pc_cf_in_domain_train_vars,
+													np.expand_dims(np.argmax(pc_cf_in_domain_train, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_in_test = np.take_along_axis(pc_cf_in_domain_test_vars,
+													np.expand_dims(np.argmax(pc_cf_in_domain_test, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_ood_test = np.take_along_axis(pc_cf_ood_test_vars,
+													np.expand_dims(np.argmax(pc_cf_ood_test, axis=1), axis=1),
+													axis=1).flatten()
+
 
 	# load results form a DC (trained with dropout)
 	dc_in_domain_train = np.exp(np.load(
@@ -2884,41 +2904,106 @@ def gen_figure1_svhn(kde=False, plot_entropy=False):
 		dc_in_domain_train = entropy(dc_in_domain_train, axis=1)
 		dc_in_domain_test = entropy(dc_in_domain_test, axis=1)
 		dc_ood_test = entropy(dc_ood_test, axis=1)
+
+		pc_in_domain_train = entropy(pc_in_domain_train, axis=1)
+		pc_in_domain_test = entropy(pc_in_domain_test, axis=1)
+		pc_ood_test = entropy(pc_ood_test, axis=1)
+
+		pc_cf_in_domain_train = entropy(pc_cf_in_domain_train, axis=1)
+		pc_cf_in_domain_test = entropy(pc_cf_in_domain_test, axis=1)
+		pc_cf_ood_test = entropy(pc_cf_ood_test, axis=1)
 	else:
 		dc_in_domain_train = dc_in_domain_train.max(axis=1)
 		dc_in_domain_test = dc_in_domain_test.max(axis=1)
 		dc_ood_test = dc_ood_test.max(axis=1)
 
+		pc_in_domain_train = pc_in_domain_train.max(axis=1)
+		pc_in_domain_test = pc_in_domain_test.max(axis=1)
+		pc_ood_test = pc_ood_test.max(axis=1)
+
+		pc_cf_in_domain_train = pc_cf_in_domain_train.max(axis=1)
+		pc_cf_in_domain_test = pc_cf_in_domain_test.max(axis=1)
+		pc_cf_ood_test = pc_cf_ood_test.max(axis=1)
+
 	pred_uncert_in_train = np.sqrt(pred_uncert_in_train)
 	pred_uncert_in_test = np.sqrt(pred_uncert_in_test)
 	pred_uncert_ood_test = np.sqrt(pred_uncert_ood_test)
 
-	fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(10, 5), tight_layout=True)
+	pc_cf_pred_uncert_in_train = np.sqrt(pc_cf_pred_uncert_in_train)
+	pc_cf_pred_uncert_in_test = np.sqrt(pc_cf_pred_uncert_in_test)
+	pc_cf_pred_uncert_ood_test = np.sqrt(pc_cf_pred_uncert_ood_test)
+
+	fig, axes = plt.subplots(nrows=2, ncols=3, figsize=(15, 10), tight_layout=True)
 
 	palette = {'In-domain (SVHN Train)': "yellow", 'In-domain (SVHN Test)': "red", 'OOD (CIFAR-10 Test)': "cyan"}
 
-	# df_in_train = pd.DataFrame({'in_train': pc_in_domain_train})
-	# df_in_test = pd.DataFrame({'in_test': pc_in_domain_test})
-	# df_ood_test = pd.DataFrame({'ood_test': pc_ood_test})
-	# pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
-	# pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Test)'}, axis=1)
+
 
 	if not plot_entropy:
-		axes[0].set_xlim(0.0, 1.)
-		# axes[1].set_xlim(0.2, 1.)
+		axes[0][0].set_xlim(0.0, 1.)
+		axes[0][1].set_xlim(0.0, 1.)
+		axes[0][2].set_xlim(0.0, 1.)
+	else:
+		axes[0][0].set_xlim(-0.1, 2.5)
+		axes[0][1].set_xlim(-0.1, 2.5)
+		axes[0][2].set_xlim(-0.1, 2.5)
+
+		axes[0][0].set_ylim(0.0, 1.)
+		axes[0][1].set_ylim(0.0, 1.)
+		axes[0][2].set_ylim(0.0, 1.)
 
 
 	plot_kind = 'Predictive Entropy' if plot_entropy else 'Classification Confidence'
-	# axes[0].set_title('Probabilistic Circuit ({})'.format(plot_kind))
-	axes[0].set_title('Dropout Circuit ({})'.format(plot_kind))
-	axes[1].set_title('Dropout Circuit (Uncertainty)')
+	axes[0][0].set_title('Probabilistic Circuit ({})'.format(plot_kind))
+	axes[0][1].set_title('Probabilistic Circuit + CF ({})'.format(plot_kind))
+	axes[1][1].set_title('Probabilistic Circuit + CF (Uncertainty) [Zoom-in]')
+	axes[0][2].set_title('Dropout Circuit ({})'.format(plot_kind))
+	axes[1][2].set_title('Dropout Circuit (Uncertainty)')
 
-	axes[0].set_xlabel(plot_kind)
-	axes[1].set_xlabel('Predictive Uncertainty (STD)')
+	axes[0][0].set_xlabel(plot_kind)
+	axes[0][1].set_xlabel(plot_kind)
+	axes[1][1].set_xlabel('Predictive Uncertainty (STD)')
+	axes[0][2].set_xlabel(plot_kind)
+	axes[1][2].set_xlabel('Predictive Uncertainty (STD)')
 
-	# p_1 = sns.histplot(data=pd_data, stat="probability", bins=20,
-	# 				   element="bars", common_norm=False, palette=palette, ax=axes[0])
-	#
+	df_in_train = pd.DataFrame({'in_train': pc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': pc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': pc_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+
+	p_1 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[0][0])
+
+	df_in_train = pd.DataFrame({'in_train': pc_cf_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': pc_cf_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': pc_cf_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+
+	p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[0][1])
+
+	df_in_train = pd.DataFrame({'in_train': pc_cf_pred_uncert_in_train})
+	df_in_test = pd.DataFrame({'in_test': pc_cf_pred_uncert_in_test})
+	df_ood_test = pd.DataFrame({'ood_test': pc_cf_pred_uncert_ood_test})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'},
+							 axis=1)
+
+	axes[1][1].set_xlim(0, .25)
+	axes[1][1].set_ylim(0, .175)
+	p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[1][1])
+
+	axes[1][0].set_title('Probabilistic Circuit + CF (Uncertainty)')
+	axes[1][0].set_xlabel('Predictive Uncertainty (STD)')
+	axes[1][0].set_xlim(0, 1.75)
+	p_3_bis = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[1][0])
+
+
+
 	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
 	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
 	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test})
@@ -2926,8 +3011,8 @@ def gen_figure1_svhn(kde=False, plot_entropy=False):
 	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
 
 
-	p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
-					   element="bars", common_norm=False, palette=palette, ax=axes[0])
+	p_4 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[0][2])
 
 	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
 	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
@@ -2936,9 +3021,11 @@ def gen_figure1_svhn(kde=False, plot_entropy=False):
 	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
 
 
-	axes[1].set_xlim(0, .25)
-	p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
-					   element="bars", common_norm=False, palette=palette, ax=axes[1])
+	axes[1][2].set_xlim(0, .25)
+	axes[1][2].set_ylim(0, .175)
+
+	p_5 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+					   element="bars", common_norm=False, palette=palette, ax=axes[1][2])
 
 	kde_string = '_kde' if kde else ''
 	entropy_string = '_entropy' if plot_entropy else ''
@@ -2981,8 +3068,6 @@ def gen_figure1_svhn(kde=False, plot_entropy=False):
 	dc_ood_test_llx = np.load(
 		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/ll_x_cifar_test_0.1_None.npy'
 	)
-
-	breakpoint()
 
 	# TODO this could be wrong, we should probably apply the formula for summing up STDs
 	# pred_uncert_in_train = np.sqrt(dc_in_domain_train_vars)

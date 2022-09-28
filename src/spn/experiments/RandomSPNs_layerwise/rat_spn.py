@@ -274,7 +274,10 @@ class RatSpn(nn.Module):
         # if it is always because of a small negative value in the decimal space then could be ok
         # to apply the following approximation (usually this small negative values come from numerical
         # approximation issue, from difference of (almost) equal numbers that should have 0 as outcome).
+        if not self.training and right_term.isnan().sum():
+            ic(right_term.isnan().sum())
         right_term = torch.where(right_term.isnan(), torch.tensor([-float('inf')]).to(right_term.device), right_term) #  TODO
+
 
         vars = left_term + right_term
 
@@ -303,7 +306,10 @@ class RatSpn(nn.Module):
         # TODO here too, we need to manage negative values result of the difference otherwise
         # would be impossible to operate in the log space
         x = logsumexp(logsumexp(h_term, l_term), i_term, mask=mask)
-        # x = torch.where(x.isnan(), torch.tensor([-float('inf')]).to(x.device), x)  # TODO
+        if not self.training and x.isnan().sum() > 0:
+            ic(x.isnan().sum())
+        x = torch.where(x.isnan(), torch.tensor([-float('inf')]).to(x.device), x)  # TODO
+
 
         # assert x.isfinite().sum() == torch.prod(torch.tensor(x.shape)), breakpoint()
         # assert vars.isfinite().sum() == torch.prod(torch.tensor(vars.shape)), breakpoint()
