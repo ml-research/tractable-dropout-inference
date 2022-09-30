@@ -513,6 +513,82 @@ def get_kmnist_loaders(use_cuda, device, batch_size):
     )
     return train_loader, test_loader
 
+def get_lsun_loaders(use_cuda, device, batch_size):
+    """
+    Get the LSUN pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    lsun_classes = ['church_outdoor']
+
+    # [lc + '_train' for lc in lsun_classes]
+    # lsun_raw_transformer = transforms.Compose([transforms.Resize((32,32)), transforms.ToTensor()])
+    # lsun_train_dataset = datasets.LSUN(root='/media/data/lsun_full/lsun', classes='val',
+    #                                    transform=lsun_raw_transformer)
+    #
+    # loader = torch.utils.data.DataLoader(lsun_train_dataset, batch_size=200, num_workers=0, shuffle=False)
+    #
+    # mean = 0.0
+    # for images, _ in loader:
+    #     batch_samples = images.size(0)
+    #     images = images.view(batch_samples, images.size(1), -1)
+    #     mean += images.mean(2).sum(0)
+    # mean = mean / len(loader.dataset)
+    #
+    # var = 0.0
+    # for images, _ in loader:
+    #     batch_samples = images.size(0)
+    #     images = images.view(batch_samples, images.size(1), -1)
+    #     var += ((images - mean.unsqueeze(1)) ** 2).sum([0, 2])
+    # std = torch.sqrt(var / (len(loader.dataset) * 224 * 224))
+    # ic(mean)
+    # ic(std)
+
+    """
+    mean and standard deviation computed on the valid set
+    """
+    lsun_valid_mean = (0.5071, 0.4699, 0.4325)
+    lsun_valid_std = (0.0355, 0.0356, 0.0382)
+
+    # mean and std for church_outdoor (train set)
+    lsun_mean = (0.4846, 0.5057, 0.5166)
+    lsun_std = (0.0356, 0.0352, 0.0414)
+    #
+    # data_r = np.dstack([lsun_train_dataset[i][1][:, :, 0] for i in range(len(lsun_train_dataset))])
+    # data_g = np.dstack([lsun_train_dataset[i][1][:, :, 1] for i in range(len(lsun_train_dataset))])
+    # data_b = np.dstack([lsun_train_dataset[i][1][:, :, 2] for i in range(len(lsun_train_dataset))])
+    # lsun_mean = np.mean(data_r), np.mean(data_g), np.mean(data_b)
+    # lsun_std = np.std(data_r), np.std(data_g), np.std(data_b)
+
+
+    lsun_transformer = transforms.Compose([transforms.Resize((32,32)), transforms.ToTensor(),
+                                           transforms.Normalize(mean=lsun_mean, std=lsun_std),
+                                          ])
+
+    lsun_train_loader = torch.utils.data.DataLoader(
+        datasets.LSUN(root='/media/data/lsun_full/lsun', classes=[lc + '_train' for lc in lsun_classes], transform=lsun_transformer),
+        batch_size=batch_size,
+        shuffle=True,
+        **kwargs
+    )
+
+    lsun_transformer_valid = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(),
+                                           transforms.Normalize(mean=lsun_valid_mean, std=lsun_valid_std),
+                                           ])
+
+    # classes=[lc + '_val' for lc in lsun_classes]
+    lsun_test_loader = torch.utils.data.DataLoader(
+        datasets.LSUN(root='/media/data/lsun_full/lsun', classes='val', transform=lsun_transformer_valid),
+        batch_size=batch_size,
+        shuffle=False,
+        **kwargs
+    )
+    return lsun_train_loader, lsun_test_loader
+
 def get_cifar_loaders(use_cuda, device, batch_size):
     """
     Get the CIFAR10 pytorch data loader.
@@ -538,6 +614,61 @@ def get_cifar_loaders(use_cuda, device, batch_size):
         **kwargs
     )
     return cifar10_train_loader, cifar10_test_loader
+
+def get_cinic_loaders(use_cuda, device, batch_size):
+    """
+    Get the CINIC pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    cinic_directory = '/media/data/data/cinic'
+    cinic_mean = [0.47889522, 0.47227842, 0.43047404]
+    cinic_std = [0.24205776, 0.23828046, 0.25874835]
+
+    cinic_transformer = transforms.Compose([transforms.ToTensor(),
+                        transforms.Normalize(mean=cinic_mean,
+                                             std=cinic_std)])
+
+    cinic_train = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(cinic_directory + '/train',
+                                                                               transform=cinic_transformer),
+                                              batch_size=batch_size, shuffle=True)
+
+    cinic_test = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(cinic_directory + '/test',
+                                                                              transform=cinic_transformer),
+                                             batch_size=batch_size, shuffle=True)
+
+
+    return cinic_train, cinic_test
+
+def get_cifar100_loaders(use_cuda, device, batch_size):
+    """
+    Get the CIFAR100 pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+    cifar100_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762))])
+
+    cifar100_train_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR100(root='../data', train=True, download=True, transform=cifar100_transformer),
+        batch_size=batch_size,
+        shuffle=True,
+        **kwargs
+    )
+
+    cifar100_test_loader = torch.utils.data.DataLoader(
+        datasets.CIFAR100(root='../data', train=False, download=True, transform=cifar100_transformer),
+        batch_size=batch_size,
+        shuffle=False,
+        **kwargs
+    )
+    return cifar100_train_loader, cifar100_test_loader
 
 def get_nltcs_loaders(use_cuda, device, batch_size):
     """
@@ -678,12 +809,22 @@ def get_data_loaders(use_cuda, device, batch_size, dataset='mnist'):
         return get_nltcs_loaders(use_cuda, device, batch_size)
     elif dataset == 'msnbc':
         return get_msnbc_loaders(use_cuda, device, batch_size)
+    elif dataset == 'cifar100':
+        return get_cifar100_loaders(use_cuda, device, batch_size)
+    elif dataset == 'cinic':
+        return get_cinic_loaders(use_cuda, device, batch_size)
+    elif dataset == 'lsun':
+        return get_lsun_loaders(use_cuda, device, batch_size)
 
 
 def get_data_flatten_shape(data_loader):
+    if 'lsun' in data_loader.dataset.root:
+        return(data_loader.dataset.length, 3*32*32)
     if isinstance(data_loader.dataset, ConcatDataset):
         return (data_loader.dataset.cumulative_sizes[-1],
                 torch.prod(torch.tensor(data_loader.dataset.datasets[0].data.shape[1:])).int().item())
+    if isinstance(data_loader.dataset, torchvision.datasets.ImageFolder):
+        return(len(data_loader.dataset), 3*32*32)
     return (data_loader.dataset.data.shape[0],
             torch.prod(torch.tensor(data_loader.dataset.data.shape[1:])).int().item())
 
@@ -877,7 +1018,7 @@ def evaluate_corrupted_svhn(model_dir=None, dropout_inference=None, n_mcd_passes
 
 def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
                     rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None, eval_train_set=False,
-                     dropout_learning=None, lmbda=None
+                     dropout_learning=None, lmbda=None,
                      ):
     ic(training_dataset)
     ic(rotation)
@@ -948,72 +1089,54 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         for batch_index, (data, target) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
 
-            if rotation:
+            if rotation and training_dataset == 'mnist':
                 data = torchvision.transforms.functional.rotate(data.reshape(-1, 1, 28, 28), rotation,
                                                                 fill=-mean / std).reshape(-1, 28, 28)
             data = data.view(data.shape[0], -1)
 
-            output, stds, ll_x, var_x, root_heads, heads_vars = model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+            if dropout_inference > 0.0:
+                output, stds, ll_x, var_x, root_heads, heads_vars =\
+                    model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+            else:
+                output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
+
             if batch_index == 0:
                 output_res = output.detach().cpu().numpy()
-                var_res = stds.detach().cpu().numpy()
-                ll_x_res = ll_x.detach().cpu().numpy().flatten()
-                var_x_res = var_x.detach().cpu().numpy().flatten()
-                root_heads_res = root_heads.detach().cpu().numpy()
-                heads_vars_res = heads_vars.detach().cpu().numpy()
+                if dropout_inference > 0.0:
+                    var_res = stds.detach().cpu().numpy()
+                    ll_x_res = ll_x.detach().cpu().numpy().flatten()
+                    var_x_res = var_x.detach().cpu().numpy().flatten()
+                    root_heads_res = root_heads.detach().cpu().numpy()
+                    heads_vars_res = heads_vars.detach().cpu().numpy()
             else:
                 output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
-                var_res = np.concatenate((var_res, stds.detach().cpu().numpy()))
-                ll_x_res = np.concatenate((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
-                var_x_res = np.concatenate((var_x_res, var_x.detach().cpu().numpy().flatten()))
-                root_heads_res = np.concatenate((root_heads_res, root_heads.detach().cpu().numpy()))
-                heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
-
-
-            # output = model(data, test_dropout=False, dropout_inference=0.0, dropout_cf=False)
-            #ic(output.exp())
-            # ic(output)
-            #ic(stds)
-            # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).mean())
-            # ic(output.max(dim=1)[0].exp().mean())
-            # ic((output - torch.logsumexp(output, dim=1, keepdims=True)).exp())
-            # ic(output.max(dim=1))
-            # ic(output.max(dim=1)[0].exp())
-            #ic(output.argmax(dim=1))
-            # ic(stds.argmin(dim=1))
-            # ic(stds.argmax(dim=1))
-            #ic(target)
-            # ic(stds)
-            # # ic(stds.exp())
-            # # ic(stds.gather(1, output.argmax(dim=1).view(-1,1)))
-            # # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).exp())
-            # ic(stds.gather(1, output.argmax(dim=1).view(-1, 1)).mean())
-            # ic(stds.mean())
-            # max_std_eq_max_conds += (output.argmax(dim=1) == stds.argmax(dim=1)).sum().item()
-            # ic(torch.where(output.max(dim=1)[0].exp().isnan(), torch.tensor([0.0]).to(output.device), output.max(dim=1)[0].exp()).mean())
-            # ic((torch.where(stds.isnan(), torch.tensor([0.0]).to(stds.device), stds).sum(dim=1)/9.0).mean())
-            # assert stds.isfinite().sum() == torch.prod(torch.tensor(stds.shape)), "there is at least a non-finite value"
-            # assert output.isfinite().sum() == torch.prod(torch.tensor(output.shape)), breakpoint()
+                if dropout_inference > 0.0:
+                    var_res = np.concatenate((var_res, stds.detach().cpu().numpy()))
+                    ll_x_res = np.concatenate((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
+                    var_x_res = np.concatenate((var_x_res, var_x.detach().cpu().numpy().flatten()))
+                    root_heads_res = np.concatenate((root_heads_res, root_heads.detach().cpu().numpy()))
+                    heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
 
             # sum up batch loss
             if model.config.C == 2:
                 c_probs = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
                 c_probs = c_probs.gather(1, target.reshape(-1, 1)).flatten()
-                loss_ce += criterion(c_probs, target.float()).item()
+                if training_dataset != 'cifar100':
+                    loss_ce += criterion(c_probs, target.float()).item()
             else:
-                loss_ce += criterion(output, target).item()
+                if training_dataset != 'cifar100':
+                    loss_ce += criterion(output, target).item()
 
             data_ll.extend(torch.logsumexp(output, dim=1).detach().cpu().numpy())
             data_ll_unsup.extend(output.max(dim=1)[0].detach().cpu().numpy())
-            data_ll_super.extend(output.gather(1, target.reshape(-1, 1)).squeeze().detach().cpu().numpy())
+            if training_dataset != 'cifar100':
+                data_ll_super.extend(output.gather(1, target.reshape(-1, 1)).squeeze().detach().cpu().numpy())
             class_probs[batch_index * test_loader.batch_size: (batch_index + 1) * test_loader.batch_size, :] = (
                         output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
 
             loss_nll += -output.sum()
             pred = output.argmax(dim=1)
             correct += (pred == target).sum().item()
-
-        # ic(max_std_eq_max_conds)
 
         t_delta = time_delta_now(t_start)
         print("Eval took {}".format(t_delta))
@@ -1024,25 +1147,28 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         fold = 'test'
     np.save(d + 'output_{}_{}_{}_{}_{}_{}'.format(
         training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), output_res)
-    np.save(d + 'var_{}_{}_{}_{}_{}_{}'.format(
-        training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), var_res)
-    np.save(d + 'll_x_{}_{}_{}_{}_{}_{}'.format(
-        training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), ll_x_res)
-    np.save(d + 'var_x_{}_{}_{}_{}_{}_{}'.format(
-        training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), var_x_res)
-    np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}'.format(
-        training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), root_heads_res)
-    np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}'.format(
-        training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), heads_vars_res)
+    if dropout_inference > 0.0:
+        np.save(d + 'var_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), var_res)
+        np.save(d + 'll_x_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), ll_x_res)
+        np.save(d + 'var_x_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), var_x_res)
+        np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), root_heads_res)
+        np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation), heads_vars_res)
 
     # ic((output_res - np.logsumexp(output_res, axis=1)).exp().max(axis=1).mean())
     ic(class_probs.max(dim=1)[0].mean())
     ic(np.exp(output_res).max(axis=1).mean())
-    cf_std_0 = np.take_along_axis(np.exp(var_res), np.expand_dims(np.argmax(output_res, axis=1), axis=1),
-                                  axis=1).flatten()
-    cf_std_0 = cf_std_0.sum() / 10000  # dataset size
-    cf_std_0 = np.sqrt(cf_std_0)
-    ic(cf_std_0)
+
+    if dropout_inference > 0.0:
+        cf_std_0 = np.take_along_axis(np.exp(var_res), np.expand_dims(np.argmax(output_res, axis=1), axis=1),
+                                      axis=1).flatten()
+        cf_std_0 = cf_std_0.sum() / 10000  # dataset size
+        cf_std_0 = np.sqrt(cf_std_0)
+        ic(cf_std_0)
 
     loss_ce /= len(test_loader.dataset)
     loss_nll /= len(test_loader.dataset) + get_data_flatten_shape(test_loader)[1]
@@ -1055,12 +1181,156 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
     with open(d + 'training.out', 'a') as writer:
         writer.write(output_string + "\n")
     assert len(data_ll) == get_data_flatten_shape(test_loader)[0]
-    assert len(data_ll_super) == get_data_flatten_shape(test_loader)[0]
+    if training_dataset != 'cifar100':
+        assert len(data_ll_super) == get_data_flatten_shape(test_loader)[0]
     assert len(data_ll_unsup) == get_data_flatten_shape(test_loader)[0]
 
-    # return data_ll, class_probs.detach().cpu().numpy(), data_ll_super, data_ll_unsup, loss_ce, loss_nll
-
     return model
+
+def eval_corrupted_mnist_cf(model_dir=None, dropout_inference=None, batch_size=20,
+                            rat_S=20, rat_I=20, rat_D=5, rat_R=5, model=None, dropout_learning=None, lmbda=None,
+                            class_label=None):
+    # import spn.experiments.RandomSPNs_layerwise.mnist_c.corruptions as corruptions
+    import mnist_c.corruptions as corruptions
+
+    device = sys.argv[1]
+    use_cuda = True
+    torch.cuda.benchmark = True
+
+    d = model_dir + "post_hoc_results/closed_form/"
+    ensure_dir(d)
+
+    leaves = RatNormal
+    rat_C = 10
+    n_features = 28*28
+
+    if not model:
+        model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=device, dropout=dropout_inference, F=n_features,
+                         C=rat_C, leaf_distribution=leaves)
+
+        checkpoint = torch.load(model_dir + 'checkpoint.tar')
+        model.load_state_dict(checkpoint['model_state_dict'])
+        # old models
+        # model.load_state_dict(torch.load(model_dir + 'model.pt'))
+        model.eval()
+        device = torch.device("cuda")
+        model.to(device)
+        print(model)
+        # breakpoint()
+
+    tag = "Testing Closed Form dropout: "
+    criterion = nn.CrossEntropyLoss(reduction="sum")
+
+    severity = [1, 2, 3, 4, 5]
+    corruption_method = [corruptions.brightness, corruptions.shot_noise, corruptions.impulse_noise,
+                         corruptions.glass_blur, corruptions.motion_blur, corruptions.shear, corruptions.scale,
+                         corruptions.rotate, corruptions.translate, corruptions.fog, corruptions.spatter]
+    corruption_methods_no_severity = [corruptions.stripe, corruptions.dotted_line, corruptions.zigzag,
+                                      corruptions.canny_edges]
+
+    results_dict = {}
+    corruption_methods_full = []
+    corruption_methods_full.extend(corruption_method)
+    corruption_methods_full.extend(corruption_methods_no_severity)
+
+    for cm in corruption_methods_full:
+        if cm in corruption_methods_no_severity: severity = [None]
+        for sl in severity:
+            print("Corruption {}, Severity {}".format(cm.__name__, sl))
+
+            mean = 0.1307
+            std = 0.3081
+
+            transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize((mean), (std))])
+            dataset = datasets.MNIST(root='../data', train=False, download=True, transform=None)
+
+            kwargs = {}
+            if sl is not None: kwargs = {'severity': sl}
+            # apply corruption
+            corrupted_images = np.empty((len(dataset), 28, 28), dtype=np.uint8)
+            for i in range(len(dataset)):
+                corrupted_images[i] = round_and_astype(np.array(cm(dataset[i][0], **kwargs)))
+
+            corrupted_dataset = CustomTensorDataset(
+                tensors=[torch.tensor(corrupted_images), torch.tensor(dataset.targets)], transform=transformer)
+
+            if class_label is not None:
+                targets = torch.tensor(corrupted_dataset.targets.clone().detach())
+                target_idx = (targets == class_label).nonzero()
+                sampler = torch.utils.data.sampler.SubsetRandomSampler(target_idx.reshape((-1,)))
+                data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=batch_size, shuffle=False,
+                                                          sampler=sampler)
+            else:
+                data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=batch_size, shuffle=False)
+
+
+            with torch.no_grad():
+                output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
+                if dropout_inference > 0.0:
+                    vars_res = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
+                    ll_x_res =  torch.zeros(data_loader.dataset.data.shape[0]).to(device)
+                    var_x_res = torch.zeros(data_loader.dataset.data.shape[0]).to(device)
+                    root_heads_res = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
+                    heads_vars_res = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
+
+                n_correct = 0
+                n_samples = 0
+
+                for batch_index, (data, target) in enumerate(data_loader):
+                    data = data.to(device)
+                    data = data.view(data.shape[0], -1)
+
+                    n_samples += data.shape[0]
+
+                    if dropout_inference > 0.0:
+                        output, vars, ll_x, var_x, root_heads, heads_vars = \
+                            model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+                    else:
+                        output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
+
+                    if batch_index == 0:
+                        output_res = output.detach().cpu().numpy()
+                        if dropout_inference > 0.0:
+                            var_res = vars.detach().cpu().numpy()
+                            ll_x_res = ll_x.detach().cpu().numpy().flatten()
+                            var_x_res = var_x.detach().cpu().numpy().flatten()
+                            root_heads_res = root_heads.detach().cpu().numpy()
+                            heads_vars_res = heads_vars.detach().cpu().numpy()
+                    else:
+                        output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
+                        if dropout_inference > 0.0:
+                            var_res = np.concatenate((var_res, vars.detach().cpu().numpy()))
+                            ll_x_res = np.concatenate((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
+                            var_x_res = np.concatenate((var_x_res, var_x.detach().cpu().numpy().flatten()))
+                            root_heads_res = np.concatenate((root_heads_res, root_heads.detach().cpu().numpy()))
+                            heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
+
+
+                    if class_label:
+                        n_correct += (output.argmax(dim=1) == class_label).sum()
+                    else:
+                        n_correct += (output.argmax(dim=1) == target.to(device)).sum().item()
+
+                print("N of correct test predictions: {}/{} ({}%)".format(n_correct, n_samples,
+                                                                                    (n_correct / n_samples) * 100))
+
+            fold = 'test'
+            training_dataset = 'mnist'
+            np.save(d + 'output_{}_{}_{}_{}_{}_{}_{}'.format(
+                training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl), output_res)
+            if dropout_inference > 0.0:
+                np.save(d + 'var_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl), var_res)
+                np.save(d + 'll_x_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl), ll_x_res)
+                np.save(d + 'var_x_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl), var_x_res)
+                np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl), root_heads_res)
+                np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl), heads_vars_res)
+
+
 
 
 def post_hoc_exps(model_dir=None, training_dataset=None, dropout_inference=None, n_mcd_passes=100, batch_size=512,
@@ -2510,6 +2780,30 @@ if __name__ == "__main__":
     # #                  batch_size=500, rotation=None, model=m1)
     # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist',
     #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m2, eval_train_set=True)
+
+    # eval CF and PC on corrupted MNIST
+    # eval_corrupted_mnist_cf(model_dir='results/2022-09-16_21-08-27/model/', dropout_inference=0.2, batch_size=200,
+    #                         dropout_learning=0.2, lmbda=1.0)
+    # eval_corrupted_mnist_cf(model_dir='results/2022-09-26_19-58-52/model/', dropout_inference=0.0, batch_size=200,
+    #                         dropout_learning=0.0, lmbda=1.0)
+    # eval_corrupted_mnist_cf(model_dir='results/2022-09-26_19-58-52/model/', dropout_inference=0.2, batch_size=200,
+    #                         dropout_learning=0.0, lmbda=1.0)
+
+    # eval PC and CF on rotated images
+    m2 = test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist',
+                          dropout_inference=0.2, batch_size=200, rotation=30, eval_train_set=False, dropout_learning=0.2,
+                          lmbda=1.0)
+    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+                     batch_size=200, rotation=60, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+                     batch_size=200, rotation=90, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+                     batch_size=200, rotation=120, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+                     batch_size=200, rotation=150, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+                     batch_size=200, rotation=180, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+
     #
     # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset=get_other_dataset_name('mnist'),
     #                       dropout_inference=0.2, batch_size=200, rotation=None, model=m2, eval_train_set=False)
@@ -2545,6 +2839,15 @@ if __name__ == "__main__":
     # test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset=get_other_dataset_name('svhn'),
     #                  dropout_inference=0.1, batch_size=200, rotation=None, model=m4, eval_train_set=True)
 
+    # m4 = test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset='cinic', dropout_learning=0.1,
+    #                  dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=False, lmbda=1.0)
+    # m4 = test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset='cinic', dropout_learning=0.1,
+    #                  dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=False, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-19_23-07-08/model/', training_dataset='lsun', dropout_learning=0.1,
+    #                  dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=False, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-25_19-24-15/model/', training_dataset='lsun', dropout_inference=0.0,
+    #                  batch_size=200, rotation=None, eval_train_set=False, dropout_learning=0.0, lmbda=1.0)
+
     # svhn PC without dropout during training -- discriminative case
     # m4 = test_closed_form(model_dir='results/2022-09-25_19-24-15/model/', training_dataset='svhn',
     #                       dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=False,
@@ -2552,6 +2855,12 @@ if __name__ == "__main__":
     #
     # test_closed_form(model_dir='results/2022-09-25_19-24-15/model/', training_dataset=get_other_dataset_name('svhn'),
     #                  dropout_inference=0.1, batch_size=200, rotation=None, model=m4, eval_train_set=False,
+    #                  dropout_learning=0.0, lmbda=1.0)
+    # m4 = test_closed_form(model_dir='results/2022-09-25_19-24-15/model/', training_dataset='cifar100',
+    #                  dropout_inference=0.0, batch_size=200, rotation=None, eval_train_set=False,
+    #                  dropout_learning=0.0, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-25_19-24-15/model/', training_dataset='cinic',
+    #                  dropout_inference=0.0, batch_size=200, rotation=None, eval_train_set=False, model=m4,
     #                  dropout_learning=0.0, lmbda=1.0)
 
     # test_closed_form(model_dir='results/2022-09-25_19-24-15/model/', training_dataset='svhn',
@@ -2622,12 +2931,12 @@ if __name__ == "__main__":
     #                  dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=True,
     #                  dropout_learning=0.1, lmbda=0.0)
     #
-    m8 = test_closed_form(model_dir='results/2022-09-28_07-59-48/model/', training_dataset='svhn',
-                     dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=True,
-                     dropout_learning=0.0, lmbda=0.0)
-    test_closed_form(model_dir='results/2022-09-28_07-59-48/model/', training_dataset='svhn',
-                     dropout_inference=0.2, batch_size=200, rotation=None, model=m8, eval_train_set=True,
-                     dropout_learning=0.0, lmbda=0.0)
+    # m8 = test_closed_form(model_dir='results/2022-09-28_07-59-48/model/', training_dataset='svhn',
+    #                  dropout_inference=0.1, batch_size=200, rotation=None, eval_train_set=True,
+    #                  dropout_learning=0.0, lmbda=0.0)
+    # test_closed_form(model_dir='results/2022-09-28_07-59-48/model/', training_dataset='svhn',
+    #                  dropout_inference=0.2, batch_size=200, rotation=None, model=m8, eval_train_set=True,
+    #                  dropout_learning=0.0, lmbda=0.0)
 
     #
     # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset=get_other_dataset_name('mnist'),
