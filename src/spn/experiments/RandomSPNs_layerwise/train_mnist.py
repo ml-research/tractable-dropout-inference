@@ -1015,6 +1015,126 @@ def evaluate_corrupted_svhn(model_dir=None, dropout_inference=None, n_mcd_passes
             np.save(d + 'class_probs_c_{}_l{}'.format(corruption, cl),
                     results_dict['c_{}_l{}'.format(corruption, cl)][1].cpu().detach().numpy())
 
+def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, batch_size=200, rat_S=20, rat_I=20, rat_D=5,
+                               rat_R=5, corrupted_svhn_dir='', model=None, dropout_learning=None, lmbda=None,
+                               class_label=None):
+
+    from imagecorruptions import corrupt, get_corruption_names
+
+    dev = sys.argv[1]
+    device = torch.device("cuda:0")
+    use_cuda = True
+    torch.cuda.benchmark = True
+
+    d = model_dir + "post_hoc_results/closed_form/svhn_c/cf_p_{}/".format(str(dropout_inference).replace('.', ''))
+    ensure_dir(d)
+    n_features = 3 * 32 * 32
+    leaves = RatNormal
+    rat_C = 10
+
+    if not model:
+        model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=device, dropout=dropout_inference, F=n_features,
+                         C=rat_C, leaf_distribution=leaves)
+
+        checkpoint = torch.load(model_dir + 'checkpoint.tar')
+        model.load_state_dict(checkpoint['model_state_dict'])
+        # old models
+        # model.load_state_dict(torch.load(model_dir + 'model.pt'))
+        model.eval()
+        device = torch.device("cuda")
+        model.to(device)
+        print(model)
+        # breakpoint()
+
+    tag = "Testing Closed Form dropout: "
+    criterion = nn.CrossEntropyLoss(reduction="sum")
+
+    for corruption in get_corruption_names('common'):
+        for cl in range(5):
+            cl += 1
+            print("Corruption {} Level {}".format(corruption, cl))
+
+            corrupted_dataset = np.load(
+                corrupted_svhn_dir + 'svhn_test_{}_l{}.npy'.format(corruption, cl))
+            labels = np.load(corrupted_svhn_dir + 'svhn_test_{}_l{}_labels.npy'.format(corruption, cl))
+            assert corrupted_dataset.shape[0] == labels.shape[0]
+            assert labels.shape[0] == 26032
+
+            model.eval()
+
+            svhn_transformer = transforms.Compose(
+                [transforms.ToTensor(), transforms.Normalize((0.4377, 0.4438, 0.4728), (0.198, 0.201, 0.197))])
+
+            corrupted_dataset = CustomTensorDataset(tensors=[torch.tensor(corrupted_dataset), torch.tensor(labels)],
+                                                    transform=svhn_transformer)
+
+            if class_label is not None:
+                targets = torch.tensor(corrupted_dataset.targets.clone().detach())
+                target_idx = (targets == class_label).nonzero()
+                sampler = torch.utils.data.sampler.SubsetRandomSampler(target_idx.reshape((-1,)))
+                data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False,
+                                                          sampler=sampler)
+            else:
+                data_loader = torch.utils.data.DataLoader(corrupted_dataset, batch_size=100, shuffle=False)
+
+            with torch.no_grad():
+                n_correct = 0
+                n_samples = 0
+
+                for batch_index, (data, target) in enumerate(data_loader):
+                    data = data.to(device)
+                    data = data.view(data.shape[0], -1)
+                    n_samples += data.shape[0]
+
+                    if dropout_inference > 0.0:
+                        output, vars, ll_x, var_x, root_heads, heads_vars = \
+                            model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+                    else:
+                        output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
+
+                    if batch_index == 0:
+                        output_res = output.detach().cpu().numpy()
+                        if dropout_inference > 0.0:
+                            var_res = vars.detach().cpu().numpy()
+                            ll_x_res = ll_x.detach().cpu().numpy().flatten()
+                            var_x_res = var_x.detach().cpu().numpy().flatten()
+                            root_heads_res = root_heads.detach().cpu().numpy()
+                            heads_vars_res = heads_vars.detach().cpu().numpy()
+                    else:
+                        output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
+                        if dropout_inference > 0.0:
+                            var_res = np.concatenate((var_res, vars.detach().cpu().numpy()))
+                            ll_x_res = np.concatenate((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
+                            var_x_res = np.concatenate((var_x_res, var_x.detach().cpu().numpy().flatten()))
+                            root_heads_res = np.concatenate((root_heads_res, root_heads.detach().cpu().numpy()))
+                            heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
+
+                    if class_label:
+                        n_correct += (output.argmax(dim=1) == class_label).sum()
+                    else:
+                        n_correct += (output.argmax(dim=1) == target.to(device)).sum().item()
+
+                print("N of correct test predictions: {}/{} ({}%)".format(n_correct, n_samples,
+                                                                          (n_correct / n_samples) * 100))
+
+            fold = 'test'
+            training_dataset = 'svhn'
+            np.save(d + 'output_{}_{}_{}_{}_{}_{}_{}'.format(
+                training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), output_res)
+            if dropout_inference > 0.0:
+                np.save(d + 'var_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), var_res)
+                np.save(d + 'll_x_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), ll_x_res)
+                np.save(d + 'var_x_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), var_x_res)
+                np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl),
+                        root_heads_res)
+                np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl),
+                        heads_vars_res)
+
 
 def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
                     rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None, eval_train_set=False,
@@ -1265,14 +1385,6 @@ def eval_corrupted_mnist_cf(model_dir=None, dropout_inference=None, batch_size=2
 
 
             with torch.no_grad():
-                output = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
-                if dropout_inference > 0.0:
-                    vars_res = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
-                    ll_x_res =  torch.zeros(data_loader.dataset.data.shape[0]).to(device)
-                    var_x_res = torch.zeros(data_loader.dataset.data.shape[0]).to(device)
-                    root_heads_res = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
-                    heads_vars_res = torch.zeros(data_loader.dataset.data.shape[0], model.config.C).to(device)
-
                 n_correct = 0
                 n_samples = 0
 
@@ -2786,23 +2898,32 @@ if __name__ == "__main__":
     #                         dropout_learning=0.2, lmbda=1.0)
     # eval_corrupted_mnist_cf(model_dir='results/2022-09-26_19-58-52/model/', dropout_inference=0.0, batch_size=200,
     #                         dropout_learning=0.0, lmbda=1.0)
+    # TODO
     # eval_corrupted_mnist_cf(model_dir='results/2022-09-26_19-58-52/model/', dropout_inference=0.2, batch_size=200,
     #                         dropout_learning=0.0, lmbda=1.0)
 
+    # eval CF on corrupted SVHN
+    evaluate_corrupted_svhn_cf(model_dir='results/2022-09-19_23-07-08/model/', corrupted_svhn_dir=corrupted_svhn_dir,
+                               batch_size=200, dropout_inference=0.1, dropout_learning=0.1, lmbda=1.0, model=None)
+
     # eval PC and CF on rotated images
-    m2 = test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist',
-                          dropout_inference=0.2, batch_size=200, rotation=30, eval_train_set=False, dropout_learning=0.2,
-                          lmbda=1.0)
-    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=200, rotation=60, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
-    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=200, rotation=90, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
-    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=200, rotation=120, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
-    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=200, rotation=150, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
-    test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
-                     batch_size=200, rotation=180, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    # m2 = test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist',
+    #                       dropout_inference=0.2, batch_size=200, rotation=30, eval_train_set=False, dropout_learning=0.2,
+    #                       lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=60, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=90, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=120, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=150, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=180, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=0, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
+    # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist', dropout_inference=0.2,
+    #                  batch_size=200, rotation=360, eval_train_set=False, dropout_learning=0.2, model=m2, lmbda=1.0)
 
     #
     # test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset=get_other_dataset_name('mnist'),
