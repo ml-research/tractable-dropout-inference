@@ -1134,6 +1134,7 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, batch_siz
                 np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}_{}'.format(
                     training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl),
                         heads_vars_res)
+    return model
 
 
 def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
@@ -2903,8 +2904,14 @@ if __name__ == "__main__":
     #                         dropout_learning=0.0, lmbda=1.0)
 
     # eval CF on corrupted SVHN
-    evaluate_corrupted_svhn_cf(model_dir='results/2022-09-19_23-07-08/model/', corrupted_svhn_dir=corrupted_svhn_dir,
-                               batch_size=200, dropout_inference=0.1, dropout_learning=0.1, lmbda=1.0, model=None)
+    # evaluate_corrupted_svhn_cf(model_dir='results/2022-09-19_23-07-08/model/', corrupted_svhn_dir=corrupted_svhn_dir,
+    #                            batch_size=200, dropout_inference=0.1, dropout_learning=0.1, lmbda=1.0, model=None)
+
+    # results/2022-09-25_19-24-15/model/
+    # mdl = evaluate_corrupted_svhn_cf(model_dir='results/2022-09-25_19-24-15/model/', corrupted_svhn_dir=corrupted_svhn_dir,
+    #                                  batch_size=200, dropout_inference=0.0, dropout_learning=0.0, lmbda=1.0, model=None)
+    evaluate_corrupted_svhn_cf(model_dir='results/2022-09-25_19-24-15/model/', corrupted_svhn_dir=corrupted_svhn_dir,
+                               batch_size=200, dropout_inference=0.1, dropout_learning=0.0, lmbda=1.0, model=None)
 
     # eval PC and CF on rotated images
     # m2 = test_closed_form(model_dir='results/2022-09-16_21-08-27/model/', training_dataset='mnist',
@@ -3379,7 +3386,70 @@ if __name__ == "__main__":
     # load_torch(model_dir='results/2022-05-15_05-20-35/model/', train_on_fmnist=False, dropout_inference=0.2) # lambda 0. mnist
     # run_torch(200, 200, dropout_inference=0.2, dropout_spn=0.2, class_label=1, train_on_fmnist=False, lmbda=1.0, eval_single_digit=False, toy_setting=False, eval_rotation=False)
 
+""" models directory 
+***** lambda = 1 (discriminative setting)
+--- SVHN
+dropout during training 0.0
+results/2022-09-25_19-24-15/model/
 
+dropout during training 0.1
+results/2022-09-19_23-07-08/model/
+
+dropout during training 0.2
+results/2022-09-22_11-26-12/model/
+
+--- MNIST
+dropout during training 0.0
+results/2022-09-26_19-58-52/model/
+
+dropout during training 0.1
+results/2022-09-17_19-27-05/model/
+
+dropout during training 0.2
+results/2022-09-16_21-08-27/model/
+
+--- F-MNIST
+dropout during training 0.0
+results/2022-09-19_09-34-33/model/
+
+dropout during training 0.1
+results/2022-09-28_11-42-30/model/
+results/2022-09-14_20-39-12/model/
+
+dropout during training 0.2
+results/2022-09-14_14-28-01/model/
+
+***** lambda = 0 (generative setting)
+--- SVHN
+dropout during training 0.0
+results/2022-09-28_07-59-48/model/
+
+dropout during training 0.1
+results/2022-09-28_07-57-19/model/
+
+dropout during training 0.2
+results/2022-09-28_07-55-23/model/
+
+--- MNIST
+dropout during training 0.0
+results/2022-09-19_07-20-01/model/
+
+dropout during training 0.1
+results/2022-09-27_23-25-31/model/
+
+dropout during training 0.2
+results/2022-09-28_06-31-59/model/
+
+--- F-MNIST
+dropout during training 0.0
+results/2022-09-19_20-52-23/model/
+
+dropout during training 0.1
+results/2022-09-27_23-20-54/model/
+
+dropout during training 0.2
+results/2022-09-28_05-33-15/model/
+"""
 
 # TODO
 # - add logging instead of prints
