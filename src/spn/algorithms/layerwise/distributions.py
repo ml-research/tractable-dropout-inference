@@ -173,7 +173,11 @@ class Leaf(AbstractLayer):
 
         assert x.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
         if test_dropout and dropout_cf:
-            return x, torch.zeros(x.shape).log()  # TODO here we are not propagating the uncertainty from leaves
+            return x, torch.zeros(x.shape).log()  # NOTE here we are not propagating the uncertainty from leaves
+            # vars = torch.repeat_interleave(d.scale, x.shape[0], dim=0)
+            # vars = torch.log(vars)
+            # assert x.shape == vars.shape, "Expectations and variances have different shape."
+            # return x, vars
         return x
 
     @abstractmethod

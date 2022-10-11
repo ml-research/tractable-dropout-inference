@@ -104,7 +104,8 @@ class Sum(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.weights.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None,
+                ll_correction=False):
         """
         Sum layer foward pass.
 
@@ -125,6 +126,7 @@ class Sum(AbstractLayer):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
         if test_dropout and dropout_inference > 0.0 and not dropout_cf:
+            ic('applying MCD sum node')
             # TODO NOTE probably this is not the most efficient way to apply dropout here
             dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool()
             while torch.any(torch.all(dropout_indices, dim=2)):
@@ -144,15 +146,23 @@ class Sum(AbstractLayer):
         # Multiply (add in log-space) input features and weights
         log_probs = x + logweights  # Shape: [n, d, ic, oc, r]
 
+        log_q = np.log(1 - dropout_inference)
+        log_p = np.log(dropout_inference)
+
         # Compute sum via logsumexp along in_channels dimension
-        log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r]
+        log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r] #
+
+        if ll_correction and test_dropout and dropout_inference > 0.0 and dropout_cf:
+            # ic("PROBS ll_corr sum node")
+            log_probs += log_q
 
         # Assert correct dimensions
         assert log_probs.size() == (N, D, OC, R)
 
         # TODO NOTE add constant to account for reduction in expected LL with MCD
         if test_dropout and dropout_inference > 0.0 and not dropout_cf:
-            log_probs = log_probs - np.log(1 - dropout_inference)
+            # ic("MCD PROBS ll_corr sum node")
+            log_probs = log_probs - log_q
 
         assert log_probs.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
 
@@ -170,10 +180,15 @@ class Sum(AbstractLayer):
 
                 # log_vars = logsumexp(left_term, right_term)
 
-                log_q = np.log(1-dropout_inference)
-                log_p = np.log(dropout_inference)
+
                 log_var_plus_exp = torch.logsumexp(torch.stack((input_vars, squared_exps + log_p), dim=-1), dim=-1)
-                log_vars = torch.logsumexp(squared_weights + log_var_plus_exp, dim=2) - log_q
+                log_vars = torch.logsumexp(squared_weights + log_var_plus_exp, dim=2)
+                if ll_correction:
+                    # ic("VARS ll_corr sum node")
+                    log_vars += log_q
+                else:
+                    # ic("VARS NO corr sum node")
+                    log_vars -= log_q
             else:
                 # when the sum node corresponds to a root node
                 log_vars = torch.logsumexp((logweights * 2 + vars.unsqueeze(3)), dim=2)
@@ -335,19 +350,30 @@ class Product(AbstractLayer):
         N, D, C, R = exps.size()
         D_out = D // self.cardinality
 
+        # compute the variance of a product node
+        # vars = logsumexp(vars, exps * 2)
+        # vars = vars.unsqueeze(1)
+        # vars = F.conv3d(vars, weight=self._conv_weights, stride=(self.cardinality, 1, 1))
+        # vars = vars.squeeze(1)
+
+
         # Use convolution with 3D weight tensor filled with ones to simulate the product node
         exps = exps.unsqueeze(1)  # Shape: [n, 1, d, c, r]
         result = F.conv3d(exps, weight=self._conv_weights, stride=(self.cardinality, 1, 1))
 
         # Remove simulated channel
         result = result.squeeze(1)
+        sub_mask = torch.tensor([1, -1])
+        # vars = logsumexp(vars, result * 2, mask=sub_mask)
 
         assert result.size() == (N, D_out, C, R)
         assert result.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
         return result, torch.zeros_like(result).log()  # TODO double check here, this holds only right after leaves
+        # return result, vars
 
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None,
+                ll_correction=False):
         """
         Product layer forward pass.
 
@@ -487,7 +513,8 @@ class CrossProduct(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.unraveled_channel_indices.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None):
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None,
+                ll_correction=False):
         """
         Product layer forward pass.
 

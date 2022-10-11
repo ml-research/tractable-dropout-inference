@@ -174,12 +174,12 @@ class RatSpn(nn.Module):
 
         return x
 
-    def _forward_cf(self, x: torch.Tensor, dropout_inference):
+    def _forward_cf(self, x: torch.Tensor, dropout_inference, ll_correction=False):
         x, vars = self._leaf(x, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
 
-        x, vars = self._forward_layers_cf(x, vars, dropout_inference=dropout_inference)
+        x, vars = self._forward_layers_cf(x, vars, dropout_inference=dropout_inference, ll_correction=ll_correction)
         assert x.shape == vars.shape, "shape of expectaions and variances is different"
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
@@ -318,12 +318,13 @@ class RatSpn(nn.Module):
 
         return x, vars, ll_x, var_x, heads_output, vars_copy
 
-    def _forward_layers_cf(self, x, vars, dropout_inference=0.0):
+    def _forward_layers_cf(self, x, vars, dropout_inference=0.0, ll_correction=False):
         for layer in self._inner_layers:
-            x, vars = layer(x, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=True, vars=vars)
+            x, vars = layer(x, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True, vars=vars,
+                            ll_correction=ll_correction)
         return x, vars
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, ll_correction=False) -> torch.Tensor:
         """
         Forward pass through RatSpn. Computes the conditional log-likelihood P(X | C).
 
@@ -337,7 +338,7 @@ class RatSpn(nn.Module):
         x = self._randomize(x)
 
         if test_dropout and dropout_cf:
-            return self._forward_cf(x, dropout_inference)
+            return self._forward_cf(x, dropout_inference, ll_correction)
 
         # Apply leaf distributions
         x = self._leaf(x, test_dropout=False, dropout_inference=0.0, dropout_cf=dropout_cf)
