@@ -16,8 +16,6 @@ from spn.algorithms.layerwise.clipper import DistributionClipper
 from spn.algorithms.layerwise.layers import AbstractLayer, Sum
 from spn.algorithms.layerwise.type_checks import check_valid
 
-from icecream import ic
-
 logger = logging.getLogger(__name__)
 
 
@@ -144,18 +142,6 @@ class Leaf(AbstractLayer):
         if self.dropout > 0.0 and self.training:
             dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = 0.0
-            # assert(dropout_indices.sum() <=  (x == 0.0).sum())
-        # apply Monte Carlo dropout (at inference) time
-        # TODO we disable it for now, we apply it only at inner sum nodes
-        # if test_dropout and dropout_inference > 0.0:
-        #     dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool() #NOTE not the most efficient way
-        #     x[dropout_indices] = 0.0
-        #     # x[dropout_indices] = np.NINF # TODO test by "truncating" the leaf distribution
-        #     # print(dropout_indices.sum())
-        #     # assert (dropout_indices.sum() <= (x == 0.0).sum())
-        #     # if dropout_cf:
-        #     #     vars = torch.zeros(x.shape[0]).log()
-        #     #     return x, vars
         return x
 
     def _marginalize_input(self, x: torch.Tensor) -> torch.Tensor:
@@ -174,10 +160,6 @@ class Leaf(AbstractLayer):
         assert x.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
         if test_dropout and dropout_cf:
             return x, torch.zeros(x.shape).log()  # NOTE here we are not propagating the uncertainty from leaves
-            # vars = torch.repeat_interleave(d.scale, x.shape[0], dim=0)
-            # vars = torch.log(vars)
-            # assert x.shape == vars.shape, "Expectations and variances have different shape."
-            # return x, vars
         return x
 
     @abstractmethod
@@ -305,7 +287,7 @@ class MultivariateNormal(Leaf):
         return x
 
     def sample(self, n: int = None, context: SamplingContext = None) -> torch.Tensor:
-        """TODO: Multivariate need special treatment."""
+        """TODO: Multivariate needs special treatment."""
         raise Exception("Not yet implemented")
 
     def _get_base_distribution(self):

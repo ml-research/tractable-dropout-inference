@@ -11,8 +11,6 @@ from spn.algorithms.layerwise.layers import Product
 from spn.algorithms.layerwise.type_checks import check_valid
 from spn.algorithms.layerwise.utils import SamplingContext
 
-from icecream import ic
-
 logger = logging.getLogger(__name__)
 
 

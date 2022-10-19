@@ -5,6 +5,27 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
+def logsumexp(left, right, mask=None):
+    """
+    Source: https://github.com/pytorch/pytorch/issues/32097
+
+    Logsumexp with custom scalar mask to allow for negative values in the sum.
+
+    Args:
+      tensor:
+      other:
+      mask:  (Default value = None)
+
+    Returns:
+
+    """
+    if mask is None:
+        mask = torch.tensor([1, 1])
+    else:
+        assert mask.shape == (2,), "Invalid mask shape"
+
+    maxes = torch.max(left, right)
+    return maxes + ((left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]).log()
 
 @contextmanager
 def provide_evidence(spn: nn.Module, evidence: torch.Tensor, requires_grad=False):

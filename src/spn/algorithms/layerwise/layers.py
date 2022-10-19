@@ -8,33 +8,9 @@ from torch import nn
 from torch.nn import functional as F
 
 from spn.algorithms.layerwise.type_checks import check_valid
-from spn.algorithms.layerwise.utils import SamplingContext
+from spn.algorithms.layerwise.utils import SamplingContext, logsumexp
 
-from icecream import ic
 logger = logging.getLogger(__name__)
-
-
-def logsumexp(left, right, mask=None):
-    """
-    Source: https://github.com/pytorch/pytorch/issues/32097
-
-    Logsumexp with custom scalar mask to allow for negative values in the sum.
-
-    Args:
-      tensor:
-      other:
-      mask:  (Default value = None)
-
-    Returns:
-
-    """
-    if mask is None:
-        mask = torch.tensor([1, 1])
-    else:
-        assert mask.shape == (2,), "Invalid mask shape"
-
-    maxes = torch.max(left, right)
-    return maxes + ((left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]).log()
 
 class AbstractLayer(nn.Module, ABC):
     def __init__(self, in_features: int, num_repetitions: int = 1):
@@ -125,13 +101,13 @@ class Sum(AbstractLayer):
             while torch.any(torch.all(dropout_indices, dim=2)):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
-        if test_dropout and dropout_inference > 0.0 and not dropout_cf:
-            # ic('applying MCD sum node')
-            # TODO NOTE probably this is not the most efficient way to apply dropout here
-            dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool()
-            while torch.any(torch.all(dropout_indices, dim=2)):
-                dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
-            x[dropout_indices] = np.NINF
+        # if test_dropout and dropout_inference > 0.0 and not dropout_cf:
+        #     # ic('applying MCD sum node')
+        #     # TODO NOTE probably this is not the most efficient way to apply dropout here
+        #     dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool()
+        #     while torch.any(torch.all(dropout_indices, dim=2)):
+        #         dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
+        #     x[dropout_indices] = np.NINF
 
         # Dimensions
         N, D, IC, R = x.size()
@@ -153,16 +129,15 @@ class Sum(AbstractLayer):
         log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r] #
 
         if ll_correction and test_dropout and dropout_inference > 0.0 and dropout_cf:
-            # ic("PROBS ll_corr sum node")
             log_probs += log_q
 
         # Assert correct dimensions
         assert log_probs.size() == (N, D, OC, R)
 
-        # TODO NOTE add constant to account for reduction in expected LL with MCD
-        if test_dropout and dropout_inference > 0.0 and not dropout_cf:
-            # ic("MCD PROBS ll_corr sum node")
-            log_probs = log_probs - log_q
+        # # TODO NOTE add constant to account for reduction in expected LL with MCD
+        # if test_dropout and dropout_inference > 0.0 and not dropout_cf:
+        #     # ic("MCD PROBS ll_corr sum node")
+        #     log_probs = log_probs - log_q
 
         assert log_probs.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
 
@@ -172,29 +147,18 @@ class Sum(AbstractLayer):
                 squared_exps = x * 2
                 input_vars = vars.unsqueeze(3)
 
-                # right_term = torch.logsumexp((squared_weights + squared_exps), dim=2)
-                # left_term = torch.logsumexp((squared_weights + input_vars), dim=2)
-
-                # right_term += torch.log(torch.tensor(dropout_inference / (1 - dropout_inference)).to(x.device))
-                # left_term += torch.log(torch.tensor(1 / (1 - dropout_inference)).to(x.device))
-
-                # log_vars = logsumexp(left_term, right_term)
-
-
                 log_var_plus_exp = torch.logsumexp(torch.stack((input_vars, squared_exps + log_p), dim=-1), dim=-1)
                 log_vars = torch.logsumexp(squared_weights + log_var_plus_exp, dim=2)
                 if ll_correction:
-                    # ic("VARS ll_corr sum node")
                     log_vars += log_q
                 else:
-                    # ic("VARS NO corr sum node")
                     log_vars -= log_q
             else:
                 # when the sum node corresponds to a root node
                 log_vars = torch.logsumexp((logweights * 2 + vars.unsqueeze(3)), dim=2)
 
             assert log_vars.isnan().sum() == 0, "NaN values encountered while propagating bottom-up from a Sum node"
-            # TODO NOTE the next assert might be excessive since we could get -inf as valid and legit value
+            # NOTE the next assert might be excessive since we could get -inf as valid and legit value
             assert log_vars.isfinite().sum() > 0, "No finite values while propagating bottom-up from a Sum node"
 
             return log_probs, log_vars
@@ -333,8 +297,8 @@ class Product(AbstractLayer):
         # Only one product node
         if self.cardinality == exps.shape[1]:
             exps = exps.sum(1, keepdim=True)
-            vars = vars  # TODO implement variance computation at product node for this specific simple case
-            breakpoint()
+            vars = vars  # TODO implement variance computation for a product node in this special case
+            raise NotImplementedError()
 
         # Special case: if cardinality is 1 (one child per product node), this is a no-op
         if self.cardinality == 1:
@@ -350,13 +314,7 @@ class Product(AbstractLayer):
         N, D, C, R = exps.size()
         D_out = D // self.cardinality
 
-        # compute the variance of a product node
-        # vars = logsumexp(vars, exps * 2)
-        # vars = vars.unsqueeze(1)
-        # vars = F.conv3d(vars, weight=self._conv_weights, stride=(self.cardinality, 1, 1))
-        # vars = vars.squeeze(1)
-
-
+        # Compute the variance of a product node
         # Use convolution with 3D weight tensor filled with ones to simulate the product node
         exps = exps.unsqueeze(1)  # Shape: [n, 1, d, c, r]
         result = F.conv3d(exps, weight=self._conv_weights, stride=(self.cardinality, 1, 1))
@@ -368,8 +326,8 @@ class Product(AbstractLayer):
 
         assert result.size() == (N, D_out, C, R)
         assert result.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
-        return result, torch.zeros_like(result).log()  # TODO double check here, this holds only right after leaves
-        # return result, vars
+        # This holds only right after leaves i.e. the only place where products are used instead of cross products
+        return result, torch.zeros_like(result).log()
 
 
     def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None,
