@@ -126,7 +126,7 @@ class Sum(AbstractLayer):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
         if test_dropout and dropout_inference > 0.0 and not dropout_cf:
-            ic('applying MCD sum node')
+            # ic('applying MCD sum node')
             # TODO NOTE probably this is not the most efficient way to apply dropout here
             dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool()
             while torch.any(torch.all(dropout_indices, dim=2)):

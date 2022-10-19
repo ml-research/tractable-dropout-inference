@@ -5,7 +5,14 @@ src/results/
 src/spn/experiments/RandomSPNs_layerwise/#train_mnist#
 src/spn/experiments/RandomSPNs_layerwise/results/
 src/spn/experiments/RandomSPNs_layerwise/train_mnist_copy.py
-
+vis-code/figs/
+.run/
+dnn_exps/*tar
+src/spn/experiments/RandomSPNs_layerwise/svhn_corruptions/
+src/spn/experiments/RandomSPNs_layerwise/rotating_mnist/
+vis-code/svhn_imgs/
+vis-code/svhn_corruptions/
+vis-code/*.png
 
 
 # Created by https://www.gitignore.io/api/osx,linux,python,pycharm

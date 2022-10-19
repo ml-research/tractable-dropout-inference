@@ -16,6 +16,58 @@ from torch import nn
 import pdb
 import datetime
 
+class Flatten(nn.Module):
+    def __init__(self):
+        super(Flatten, self).__init__()
+
+    def forward(self, x):
+        x = x.view(x.size(0), -1)
+        return x
+
+
+class LeNet(nn.Module):
+    def __init__(self, droprate=0.5, droprate_last_layer=0.2):
+        super(LeNet, self).__init__()
+        self.model = nn.Sequential()
+        self.model.add_module('conv1', nn.Conv2d(1, 20, kernel_size=5, padding=2))
+        self.model.add_module('dropout1', nn.Dropout2d(p=droprate))
+        self.model.add_module('maxpool1', nn.MaxPool2d(2, stride=2))
+        self.model.add_module('conv2', nn.Conv2d(20, 50, kernel_size=5, padding=2))
+        self.model.add_module('dropout2', nn.Dropout2d(p=droprate))
+        self.model.add_module('maxpool2', nn.MaxPool2d(2, stride=2))
+        self.model.add_module('flatten', Flatten())
+        self.model.add_module('dense3', nn.Linear(50 * 7 * 7, 500))
+        self.model.add_module('relu3', nn.ReLU())
+        self.model.add_module('dropout3', nn.Dropout(p=droprate_last_layer))
+        self.model.add_module('final', nn.Linear(500, 10))
+        self.model.add_module('softmax', nn.Softmax(dim=1))
+
+    def forward(self, x):
+        return self.model(x)
+
+class LeNet2(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 6, 5),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(6, 16, 5),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(256, 120),
+            nn.ReLU(),
+            nn.Linear(120, 84),
+            nn.ReLU(),
+            nn.Linear(84, 10),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        self.net(x)
+
+
 mean = 0.1307
 std = 0.3081
 
@@ -32,24 +84,36 @@ input_size = 784
 # hidden_sizes = [128, 64]
 hidden_sizes = [1024, 544]
 output_size = 10
-dropout_p = 0.8
+dropout_p = 0.5
+epochs = 200 #200
+
 
 # Build a feed-forward network
-model = nn.Sequential(nn.Linear(input_size, hidden_sizes[0]),
-                      nn.Dropout(p=dropout_p),
-                      nn.ReLU(),
-                      nn.Linear(hidden_sizes[0], hidden_sizes[1]),
-                      nn.Dropout(p=dropout_p),
-                      nn.ReLU(),
-                      nn.Linear(hidden_sizes[1], output_size),
-                      nn.Softmax(dim=1))
-                      # nn.LogSoftmax(dim=1))
+if sys.argv[2] == 'lenet':
+    model_type = 'lenet'
+    model = LeNet()
+else:
+    model_type = 'simple'
+    model = nn.Sequential(nn.Linear(input_size, hidden_sizes[0]),
+                          nn.Dropout(p=dropout_p),
+                          nn.ReLU(),
+                          nn.Linear(hidden_sizes[0], hidden_sizes[1]),
+                          nn.Dropout(p=dropout_p),
+                          nn.ReLU(),
+                          nn.Linear(hidden_sizes[1], output_size),
+                          nn.Softmax(dim=1))
+                          # nn.LogSoftmax(dim=1))
 print(model)
+
+
+
 print("N of params: {}".format(sum(p.numel() for p in model.parameters() if p.requires_grad)))
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(device)
 model.to(device)
+
+
 
 
 #criterion = nn.NLLLoss()
@@ -88,16 +152,20 @@ model.to(device)
 # print('Updated weights - ', model[0].weight)
 
 # TODO add early stopping
+lr = 1e-3
 criterion = nn.CrossEntropyLoss(reduction="sum")
-optimizer = optim.Adam(model.parameters(), lr=1e-3)
+optimizer = optim.Adam(model.parameters(), lr=lr)
+
+init_datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 time0 = time()
-epochs = 200 #200
 for e in range(epochs):
     running_loss = 0
     for images, labels in train_loader:
-        # Flatten MNIST images into a 784 long vector
-        images = images.view(images.shape[0], -1)
+        if model_type == 'simple':
+            # Flatten MNIST images into a 784 long vector
+            images = images.view(images.shape[0], -1)
+
 
         # Training pass
         optimizer.zero_grad()
@@ -112,9 +180,28 @@ for e in range(epochs):
         optimizer.step()
 
         running_loss += loss.item()
-    else:
-        print("Epoch {} - Training loss: {}".format(e, running_loss/len(train_loader)))
-print("\nTraining Time (in minutes) =",(time()-time0)/60)
+    print("Epoch {} - Training loss: {}".format(e, running_loss/len(train_loader)))
+
+    if e % 10 == 9:
+        print('Saving model... epoch {}'.format(e))
+        torch.save({
+            'epoch': e,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': loss,
+            'lr': lr,
+        }, './{}_{}_checkpoint.tar'.format(model_type, init_datetime_str))
+
+print("\nTraining Time (in minutes) =", (time()-time0)/60)
+print('Done... Saving model...')
+torch.save({
+    'epoch': e,
+    'model_state_dict': model.state_dict(),
+    'optimizer_state_dict': optimizer.state_dict(),
+    'loss': loss,
+    'lr': lr,
+}, './{}_{}_checkpoint.tar'.format(model_type, init_datetime_str))
+
 
 
 def view_classify(img, ps):
@@ -151,6 +238,7 @@ def view_classify(img, ps):
 datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 model.eval()
 rotation_degrees = [30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330, 0]
+# rotation_degrees = [i for i in range(0, 95, 5)]
 
 for degrees in rotation_degrees:
     preds = np.empty((0, n_classes))
@@ -159,8 +247,10 @@ for degrees in rotation_degrees:
     for images, labels in test_loader:
         for i in range(len(labels)):
             img = images[i].view(1, 784)
-            img = torchvision.transforms.functional.rotate(img.reshape(-1,1,28,28), degrees, fill=-mean/std).reshape(-1,28,28)
-            img = img.view(1,784)
+            img = torchvision.transforms.functional.rotate(
+                img.reshape(-1, 1, 28, 28), degrees, fill=-mean/std).reshape(-1, 1, 28, 28)
+            if model_type == 'simple':
+                img = img.view(1, 784)
             # Turn off gradients to speed up this part
             with torch.no_grad():
                 output = model(img.cuda())
@@ -182,7 +272,7 @@ for degrees in rotation_degrees:
     print("Number of images tested =", all_count)
     print("Model Accuracy =", (correct_count/all_count))
     print("Average classification confidence {}".format(preds.max(axis=1).mean()))
-    np.save('./predictions_nn_' + str(degrees) + '_' + datetime_str, preds)
+    np.save('./predictions_nn_{}_{}_{}'.format(model_type, str(degrees), datetime_str), preds)
 
 def enable_dropout(model):
     """ Function to enable the dropout layers during test-time """
@@ -229,11 +319,17 @@ def get_monte_carlo_predictions(data_loader,
             for j in range(len(label)):
                 with torch.no_grad():
                     if rotation is None:
-                        output[j] = model(image[j].view(1,784))[0]
+                        if model_type == 'simple':
+                            output[j] = model(image[j].view(1, 784))[0]
+                        else:
+                            output[j] = model(image[j].view(-1, 1, 28, 28))[0]
                     else:
-                        rotated_img = torchvision.transforms.functional.rotate(image[j].reshape(-1,1,28,28), rotation, fill=-mean/std).reshape(-1,28,28)
-                        output[j] = model(rotated_img.view(1,784))[0]
-
+                        rotated_img = torchvision.transforms.functional.rotate(image[j].reshape(-1, 1, 28, 28), rotation,
+                                                                               fill=-mean/std).reshape(-1, 1, 28, 28)
+                        if model_type == 'simple':
+                            output[j] = model(rotated_img.view(1, 784))[0]
+                        else:
+                            output[j] = model(rotated_img.view(-1, 1, 28, 28))[0]
 
                     # output = softmax(output) # shape (n_samples, n_classes)
             predictions = np.vstack((predictions, output.cpu().numpy()))
@@ -264,15 +360,17 @@ fwd_passes = 100
 datetime_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
 
-dropout_predictions, mean, variance, entropy, mutual_info =  get_monte_carlo_predictions(test_loader, fwd_passes, model, n_classes, test_loader.dataset.targets.size(dim=0), rotation=None)
-print("Accuracy: {}".format((test_loader.dataset.targets.numpy()  == mean.argmax(axis=1)).sum()))
-np.save('./dropout_predictions_nn_' + datetime_str, dropout_predictions)
+dropout_predictions, mean, variance, entropy, mutual_info =\
+    get_monte_carlo_predictions(test_loader, fwd_passes, model, n_classes, test_loader.dataset.targets.size(dim=0),
+                                rotation=None)
+print("Accuracy: {}".format((test_loader.dataset.targets.numpy() == mean.argmax(axis=1)).sum()))
+np.save('./dropout_predictions_nn_{}_{}'.format(datetime_str, model_type), dropout_predictions)
 
 for rotation in rotation_degrees:
-    dropout_predictions, mean, variance, entropy, mutual_info =  get_monte_carlo_predictions(test_loader, fwd_passes, model, n_classes, test_loader.dataset.targets.size(dim=0), rotation=rotation)
+    dropout_predictions, mean, variance, entropy, mutual_info = get_monte_carlo_predictions(test_loader, fwd_passes, model, n_classes, test_loader.dataset.targets.size(dim=0), rotation=rotation)
     print("Accuracy on images rotated of {} degrees: ({}/{}) {}".format(rotation, (test_loader.dataset.targets.numpy()  == mean.argmax(axis=1)).sum(), mean.shape[0], (test_loader.dataset.targets.numpy()  == mean.argmax(axis=1)).sum()/mean.shape[0]))
     print("Average classification confidence {}".format(mean.max(axis=1).mean()))
-    np.save('./dropout_predictions_nn_' + str(rotation) + '_' + datetime_str, dropout_predictions)
+    np.save('./dropout_predictions_nn_{}_{}_{}'.format(str(rotation), datetime_str, model_type), dropout_predictions)
 
 
 

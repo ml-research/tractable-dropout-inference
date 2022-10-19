@@ -2,6 +2,7 @@ from locale import normalize
 from os import confstr
 import numpy as np
 
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import rc
 
@@ -21,6 +22,28 @@ from icecream import ic
 import scipy
 
 from tueplots import bundles
+from typing import Tuple
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+import itertools
+import copy
+
+def get_figsize(
+    scale=1.0, aspect_ratio=(5.0**0.5 - 1.0) / 2.0, num_columns=1
+) -> Tuple[float, float]:
+    """Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+    # Compute optimal figure sizes
+    columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+    textwidth = columnwidth_pt / 72  # pt to inch
+    aspect_ratio *= num_columns
+    scale = scale / num_columns
+    width = textwidth * scale
+    height = width * aspect_ratio
+    return width, height
+
+
+def flip(items, ncol):
+    return itertools.chain(*[items[i::ncol] for i in range(ncol)])
 
 def logsumexp(left, right, mask=None):
     """
@@ -2611,11 +2634,28 @@ def gen_class_probs_histograms():
 
 def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
 	# F-MNIST as in-domain dataset
+	plt.rcParams.update(bundles.aistats2023(nrows=1, ncols=2))
+	# plt.rcParams['font.size'] = 15.0
+	plt.rcParams['axes.labelsize'] = 20.0
+	plt.rcParams['axes.titlesize'] = 20.0
+	plt.rcParams['xtick.labelsize'] = 12.0
+	plt.rcParams['ytick.labelsize'] = 12.0
+	plt.rcParams['legend.fontsize'] = 'xx-large'
+	sns.set(style="darkgrid")
 
 	# load results got from a PC trained w/o dropout (during learning)
 	pc_in_domain_train = np.load('results/2022-09-19_09-34-33/results/class_probs_in_domain_train.npy')
 	pc_in_domain_test = np.load('results/2022-09-19_09-34-33/results/class_probs_in_domain_test.npy')
 	pc_ood_test = np.load('results/2022-09-19_09-34-33/results/class_probs_ood_test.npy')
+	pc_ood_test_2 = np.load('results/2022-09-19_09-34-33/model/post_hoc_results/closed_form/output_emnist_test_1.0_0.0_0.0_None.npy')
+	pc_ood_test_3 = np.load('results/2022-09-19_09-34-33/model/post_hoc_results/closed_form/output_kmnist_test_1.0_0.0_0.0_None.npy')
+
+
+	pc_ood_test_2 = np.exp(pc_ood_test_2 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_2, axis=1).reshape(-1, 1), 10, axis=1))
+
+	pc_ood_test_3 = np.exp(pc_ood_test_3 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_3, axis=1).reshape(-1, 1), 10, axis=1))
 
 	# load results form a DC (trained with dropout)
 	dc_in_domain_train = np.exp(np.load(
@@ -2675,6 +2715,8 @@ def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
 		pc_in_domain_train = entropy(pc_in_domain_train, axis=1)
 		pc_in_domain_test = entropy(pc_in_domain_test, axis=1)
 		pc_ood_test = entropy(pc_ood_test, axis=1)
+		pc_ood_test_2 = entropy(pc_ood_test_2, axis=1)
+		pc_ood_test_3 = entropy(pc_ood_test_3, axis=1)
 
 		dc_in_domain_train = entropy(dc_in_domain_train, axis=1)
 		dc_in_domain_test = entropy(dc_in_domain_test, axis=1)
@@ -2695,7 +2737,7 @@ def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
 
 
 
-	fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 5), tight_layout=True)
+	fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 5), tight_layout=False)
 
 	palette_pc = {'In-domain (F-MNIST Train)': "yellow", 'In-domain (F-MNIST Test)': "red", 'OOD (MNIST Test)': "cyan"}
 	# palette_dc = {'In-domain (F-MNIST Train)': "yellow", 'In-domain (F-MNIST Test)': "red", 'OOD (MNIST Test)': "cyan",
@@ -2706,10 +2748,19 @@ def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
 	df_in_train = pd.DataFrame({'in_train': pc_in_domain_train})
 	df_in_test = pd.DataFrame({'in_test': pc_in_domain_test})
 	df_ood_test = pd.DataFrame({'ood_test': pc_ood_test})
-	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
-	pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)', 2: 'OOD (MNIST Test)'}, axis=1)
+	df_ood_test_2 = pd.DataFrame({'ood_test_2': pc_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test_2': pc_ood_test_3})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-distribution (F-MNIST Train)', 1: 'In-distribution (F-MNIST Test)',
+							  2: 'OOD (MNIST Test)', 3: 'OOD (K-MNIST Test)', 4: 'OOD (E-MNIST Test)'}, axis=1)
 
-	if not plot_entropy:
+	if plot_entropy:
+		axes[0].set_xlim(-0.1, 2.)
+		axes[1].set_xlim(-0.1, 2.)
+
+		axes[0].set_ylim(0.0, 0.9)
+		axes[1].set_ylim(0.0, 0.9)
+	else:
 		axes[0].set_xlim(0.2, 1.)
 		axes[1].set_xlim(0.2, 1.)
 
@@ -2725,11 +2776,27 @@ def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
 	axes[1].set_xlabel(plot_kind)
 	axes[2].set_xlabel('Predictive Uncertainty (STD)')
 
-	if kde_plot:
-		p_1 = sns.kdeplot(data=pd_data, palette=palette_pc, ax=axes[0])
-	else:
-		p_1 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
-						   element="bars", common_norm=False, palette=palette_pc, ax=axes[0])
+	# if kde_plot:
+	# 	p_1 = sns.kdeplot(data=pd_data, palette=palette_pc, ax=axes[0])
+	# else:
+	# 	p_1 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+	# 					   element="bars", common_norm=False, palette=palette_pc, ax=axes[0])
+
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (F-MNIST Train)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="gold", ax=axes[0], alpha=1.0,
+				 label="In-distribution (F-MNIST Train)")
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (F-MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="orange", ax=axes[0], alpha=0.5,
+				 label="In-distribution (F-MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="skyblue", ax=axes[0], alpha=0.6,
+				 label="OOD (MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (K-MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="green", ax=axes[0], alpha=0.5,
+				 label="OOD (K-MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (E-MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="cyan", ax=axes[0], alpha=0.5,
+				 label="OOD (E-MNIST Test)")
 
 	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
 	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
@@ -2740,14 +2807,30 @@ def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
 	# pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)',
 	# 						  2: 'OOD (MNIST Test)', 3: 'OOD (E-MNIST Test)', 4: 'OOD (K-MNIST Test)'}, axis=1)
 	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
-	pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)',
+	pd_data = pd_data.rename({0: 'In-distribution (F-MNIST Train)', 1: 'In-distribution (F-MNIST Test)',
 							  2: 'OOD (MNIST Test)', 3: 'OOD (E-MNIST Test)', 4: 'OOD (K-MNIST Test)'}, axis=1)
 
-	if kde_plot:
-		p_2 = sns.kdeplot(data=pd_data, palette=palette_dc, ax=axes[1])
-	else:
-		p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
-						   element="bars", common_norm=False, palette=palette_dc, ax=axes[1])
+	# if kde_plot:
+	# 	p_2 = sns.kdeplot(data=pd_data, palette=palette_dc, ax=axes[1])
+	# else:
+	# 	p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+	# 					   element="bars", common_norm=False, palette=palette_dc, ax=axes[1])
+
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (F-MNIST Train)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="gold", ax=axes[1], alpha=1.0,
+				 label="In-distribution (F-MNIST Train)")
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (F-MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="orange", ax=axes[1], alpha=0.5,
+				 label="In-distribution (F-MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="skyblue", ax=axes[1], alpha=0.6,
+				 label="OOD (MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (K-MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="green", ax=axes[1], alpha=0.5,
+				 label="OOD (K-MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (E-MNIST Test)", bins=20, kde=kde,
+				 element="bars", common_norm=False, color="cyan", ax=axes[1], alpha=0.5,
+				 label="OOD (E-MNIST Test)")
 
 	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
 	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
@@ -2756,22 +2839,39 @@ def gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=False):
 	df_ood_test_3 = pd.DataFrame({'ood_test': pred_uncert_ood_test_3})
 	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
 	# pd_data = pd_data.rename({0: 'In-domain (Train)', 1: 'In-domain (Test)', 2: 'OOD (Test)'}, axis=1)
-	pd_data = pd_data.rename({0: 'In-domain (F-MNIST Train)', 1: 'In-domain (F-MNIST Test)',
+	pd_data = pd_data.rename({0: 'In-distribution (F-MNIST Train)', 1: 'In-distribution (F-MNIST Test)',
 							  2: 'OOD (MNIST Test)', 3: 'OOD (E-MNIST Test)', 4: 'OOD (K-MNIST Test)'}, axis=1)
 
 	axes[2].set_xlim(0, 0.25)
 
-	if kde_plot:
-		p_3 = sns.kdeplot(data=pd_data, palette=palette_dc, ax=axes[2])
-	else:
-		p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
-						   element="bars", common_norm=False, palette=palette_dc, ax=axes[2])
+	# if kde_plot:
+	# 	p_3 = sns.kdeplot(data=pd_data, palette=palette_dc, ax=axes[2])
+	# else:
+	# 	p_3 = sns.histplot(data=pd_data, stat="probability", bins=80, kde=kde,
+	# 					   element="bars", common_norm=False, palette=palette_dc, ax=axes[2])
+
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (F-MNIST Train)", bins=60, kde=kde,
+				 element="bars", common_norm=False, color="gold", ax=axes[2], alpha=1.0,
+				 label="In-distribution (F-MNIST Train)")
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (F-MNIST Test)", bins=60, kde=kde,
+				 element="bars", common_norm=False, color="orange", ax=axes[2], alpha=0.5,
+				 label="In-distribution (F-MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (MNIST Test)", bins=60, kde=kde,
+				 element="bars", common_norm=False, color="skyblue", ax=axes[2], alpha=0.6,
+				 label="OOD (MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (K-MNIST Test)", bins=60, kde=kde,
+				 element="bars", common_norm=False, color="green", ax=axes[2], alpha=0.5,
+				 label="OOD (K-MNIST Test)")
+	sns.histplot(data=pd_data, stat="probability", x="OOD (E-MNIST Test)", bins=60, kde=kde,
+				 element="bars", common_norm=False, color="cyan", ax=axes[2], alpha=0.5,
+				 label="OOD (E-MNIST Test)")
 
 	kde_string = '_kde' if kde else ''
 	kde_string = '_kde_plot' if kde_plot else kde_string
 
 	entropy_string = '_entropy' if plot_entropy else ''
 
+	plt.legend()
 	plt.savefig('paper_fig1_fmnist{}{}.png'.format(kde_string, entropy_string))
 	plt.savefig('paper_fig1_fmnist{}{}.pdf'.format(kde_string, entropy_string))
 	plt.close()
@@ -3415,6 +3515,319 @@ def gen_figure1_svhn_final(kde=False, plot_entropy=False):
 	plt.savefig('paper_fig1_final{}{}.pdf'.format(kde_string, entropy_string))
 	plt.close()
 
+def gen_figure1_svhn_final_extended(kde=False, plot_entropy=False):
+	# SVHN as in-domain dataset
+	plt.rcParams.update(bundles.aistats2023(nrows=1, ncols=2))
+	#plt.rcParams['font.size'] = 15.0
+	plt.rcParams['axes.labelsize'] = 20.0
+	plt.rcParams['axes.titlesize'] = 20.0
+	plt.rcParams['xtick.labelsize'] = 12.0
+	plt.rcParams['ytick.labelsize'] = 12.0
+	plt.rcParams['legend.fontsize'] = 'xx-large'
+	sns.set(style="darkgrid")
+
+	#ic(plt.rcParams)
+
+	# load results got from a PC trained w/o dropout (during learning)
+	pc_in_domain_train = np.load('results/2022-09-25_19-24-15/results/class_probs_in_domain_train.npy')
+	pc_in_domain_test = np.load('results/2022-09-25_19-24-15/results/class_probs_in_domain_test.npy')
+	pc_ood_test = np.load('results/2022-09-25_19-24-15/results/class_probs_ood_test.npy')
+	pc_ood_test_2 = np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cifar100_test_1.0_0.0_0.0_None.npy')
+	pc_ood_test_3 = np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cinic_test_1.0_0.0_0.0_None.npy')
+	pc_ood_test_4 = np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_lsun_test_1.0_0.0_0.0_None.npy')
+
+
+	pc_ood_test_2 = np.exp(pc_ood_test_2 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_2, axis=1).reshape(-1,1), 10, axis=1))
+
+	pc_ood_test_3 = np.exp(pc_ood_test_3 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_3, axis=1).reshape(-1, 1), 10, axis=1))
+	pc_ood_test_4 = np.exp(pc_ood_test_4 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_4, axis=1).reshape(-1, 1), 10, axis=1))
+
+
+
+	# load results for CF dropout on a PC trained w/o dropout (during learning)
+	pc_cf_in_domain_train = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_svhn_train_1.0_0.0_0.1_None.npy'))
+	pc_cf_in_domain_test = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_svhn_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cifar_test_1.0_0.0_0.1_None.npy'))
+
+	pc_cf_in_domain_train_vars = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_svhn_train_1.0_0.0_0.1_None.npy'))
+	pc_cf_in_domain_test_vars = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_svhn_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_vars = np.exp(np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_cifar_test_1.0_0.0_0.1_None.npy'))
+
+	pc_cf_pred_uncert_in_train = np.take_along_axis(pc_cf_in_domain_train_vars,
+													np.expand_dims(np.argmax(pc_cf_in_domain_train, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_in_test = np.take_along_axis(pc_cf_in_domain_test_vars,
+													np.expand_dims(np.argmax(pc_cf_in_domain_test, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_ood_test = np.take_along_axis(pc_cf_ood_test_vars,
+													np.expand_dims(np.argmax(pc_cf_ood_test, axis=1), axis=1),
+													axis=1).flatten()
+
+
+	# load results form a DC (trained with dropout)
+	dc_in_domain_train = np.load(
+		'results//2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_train_0.1_None.npy'
+	)
+	dc_in_domain_test = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_test_0.1_None.npy'
+	)
+	dc_ood_test = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar_test_0.1_None.npy'
+	)
+	dc_ood_test_2 = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar100_test_1.0_0.1_0.1_None.npy'
+	)
+	dc_ood_test_3 = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cinic_test_1.0_0.1_0.1_None.npy'
+	)
+	dc_ood_test_4 = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_lsun_test_1.0_0.1_0.1_None.npy'
+	)
+
+	dc_in_domain_train = np.exp(dc_in_domain_train - np.repeat(
+		scipy.special.logsumexp(dc_in_domain_train, axis=1).reshape(-1, 1), 10, axis=1))
+	dc_in_domain_test = np.exp(dc_in_domain_test - np.repeat(
+		scipy.special.logsumexp(dc_in_domain_test, axis=1).reshape(-1, 1), 10, axis=1))
+	dc_ood_test = np.exp(dc_ood_test - np.repeat(
+		scipy.special.logsumexp(dc_ood_test, axis=1).reshape(-1, 1), 10, axis=1))
+	dc_ood_test_2 = np.exp(dc_ood_test_2 - np.repeat(
+		scipy.special.logsumexp(dc_ood_test_2, axis=1).reshape(-1, 1), 10, axis=1))
+	dc_ood_test_3 = np.exp(dc_ood_test_3 - np.repeat(
+		scipy.special.logsumexp(dc_ood_test_3, axis=1).reshape(-1, 1), 10, axis=1))
+	dc_ood_test_4 = np.exp(dc_ood_test_4 - np.repeat(
+		scipy.special.logsumexp(dc_ood_test_4, axis=1).reshape(-1, 1), 10, axis=1))
+
+
+
+	dc_in_domain_train_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_svhn_train_0.1_None.npy'
+	))
+	dc_in_domain_test_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_svhn_test_0.1_None.npy'
+	))
+	dc_ood_test_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_cifar_test_0.1_None.npy'
+	))
+	dc_ood_test_vars_2 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_cifar100_test_1.0_0.1_0.1_None.npy'
+	))
+	dc_ood_test_vars_3 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_cinic_test_1.0_0.1_0.1_None.npy'
+	))
+	dc_ood_test_vars_4 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_lsun_test_1.0_0.1_0.1_None.npy'
+	))
+
+	pred_uncert_in_train = np.take_along_axis(dc_in_domain_train_vars, np.expand_dims(np.argmax(dc_in_domain_train, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_in_test = np.take_along_axis(dc_in_domain_test_vars,
+											 np.expand_dims(np.argmax(dc_in_domain_test, axis=1), axis=1),
+											 axis=1).flatten()
+	pred_uncert_ood_test = np.take_along_axis(dc_ood_test_vars,
+											  np.expand_dims(np.argmax(dc_ood_test, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_ood_test_2 = np.take_along_axis(dc_ood_test_vars_2,
+											  np.expand_dims(np.argmax(dc_ood_test_2, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_ood_test_3 = np.take_along_axis(dc_ood_test_vars_3,
+												np.expand_dims(np.argmax(dc_ood_test_3, axis=1), axis=1),
+												axis=1).flatten()
+	pred_uncert_ood_test_4 = np.take_along_axis(dc_ood_test_vars_4,
+												np.expand_dims(np.argmax(dc_ood_test_4, axis=1), axis=1),
+												axis=1).flatten()
+
+
+	if plot_entropy:
+		dc_in_domain_train = entropy(dc_in_domain_train, axis=1)
+		dc_in_domain_test = entropy(dc_in_domain_test, axis=1)
+		dc_ood_test = entropy(dc_ood_test, axis=1)
+		dc_ood_test_2 = entropy(dc_ood_test_2, axis=1)
+		dc_ood_test_3 = entropy(dc_ood_test_3, axis=1)
+		dc_ood_test_4 = entropy(dc_ood_test_4, axis=1)
+
+		pc_in_domain_train = entropy(pc_in_domain_train, axis=1)
+		pc_in_domain_test = entropy(pc_in_domain_test, axis=1)
+		pc_ood_test = entropy(pc_ood_test, axis=1)
+		pc_ood_test_2 = entropy(pc_ood_test_2, axis=1)
+		pc_ood_test_3 = entropy(pc_ood_test_3, axis=1)
+		pc_ood_test_4 = entropy(pc_ood_test_4, axis=1)
+
+		pc_cf_in_domain_train = entropy(pc_cf_in_domain_train, axis=1)
+		pc_cf_in_domain_test = entropy(pc_cf_in_domain_test, axis=1)
+		pc_cf_ood_test = entropy(pc_cf_ood_test, axis=1)
+	else:
+		dc_in_domain_train = dc_in_domain_train.max(axis=1)
+		dc_in_domain_test = dc_in_domain_test.max(axis=1)
+		dc_ood_test = dc_ood_test.max(axis=1)
+		dc_ood_test_2 = dc_ood_test_2.max(axis=1)
+		dc_ood_test_3 = dc_ood_test_3.max(axis=1)
+		dc_ood_test_4 = dc_ood_test_4.max(axis=1)
+
+		pc_in_domain_train = pc_in_domain_train.max(axis=1)
+		pc_in_domain_test = pc_in_domain_test.max(axis=1)
+		pc_ood_test = pc_ood_test.max(axis=1)
+		pc_ood_test_2 = pc_ood_test_2.max(axis=1)
+		pc_ood_test_3 = pc_ood_test_3.max(axis=1)
+		pc_ood_test_4 = pc_ood_test_4.max(axis=1)
+
+		pc_cf_in_domain_train = pc_cf_in_domain_train.max(axis=1)
+		pc_cf_in_domain_test = pc_cf_in_domain_test.max(axis=1)
+		pc_cf_ood_test = pc_cf_ood_test.max(axis=1)
+
+	pred_uncert_in_train = np.sqrt(pred_uncert_in_train)
+	pred_uncert_in_test = np.sqrt(pred_uncert_in_test)
+	pred_uncert_ood_test = np.sqrt(pred_uncert_ood_test)
+	pred_uncert_ood_test_2 = np.sqrt(pred_uncert_ood_test_2)
+	pred_uncert_ood_test_3 = np.sqrt(pred_uncert_ood_test_3)
+	pred_uncert_ood_test_4 = np.sqrt(pred_uncert_ood_test_4)
+
+	pc_cf_pred_uncert_in_train = np.sqrt(pc_cf_pred_uncert_in_train)
+	pc_cf_pred_uncert_in_test = np.sqrt(pc_cf_pred_uncert_in_test)
+	pc_cf_pred_uncert_ood_test = np.sqrt(pc_cf_pred_uncert_ood_test)
+
+	fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(15, 5), tight_layout=False)
+
+	# palette = {'In-distribution (SVHN Train)': "yellow", 'In-distribution (SVHN Test)': "red", 'OOD (CIFAR-10 Test)': "cyan"}
+	sns.color_palette("Paired")
+
+	#plt.xticks(fontsize=12)
+	#plt.yticks(fontsize=12)
+
+	if not plot_entropy:
+		axes[0].set_xlim(0.0, 1.)
+		axes[1].set_xlim(0.0, 1.)
+	else:
+		axes[0].set_xlim(-0.1, 2.5)
+		axes[1].set_xlim(-0.1, 2.5)
+
+		axes[0].set_ylim(0.0, .9)
+		axes[1].set_ylim(0.0, .9)
+
+	axes[2].set_xlim(0.0, 0.25)
+
+	plot_kind = 'Predictive Entropy' if plot_entropy else 'Classification Confidence'
+	axes[0].set_title('Probabilistic Circuit')
+	axes[1].set_title('Dropout Circuit')
+	axes[2].set_title('Dropout Circuit')
+
+	axes[0].set_xlabel(plot_kind)
+	axes[1].set_xlabel(plot_kind)
+	axes[2].set_xlabel('Predictive Uncertainty (STD)')
+
+	df_in_train = pd.DataFrame({'in_train': pc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': pc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': pc_ood_test})
+	df_ood_test_2 = pd.DataFrame({'ood_test_2': pc_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test_3': pc_ood_test_3})
+	df_ood_test_4 = pd.DataFrame({'ood_test_4': pc_ood_test_3})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3, df_ood_test_4],
+						ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-distribution (SVHN Train)', 1: 'In-distribution (SVHN Test)',
+							  2: 'OOD (CIFAR-10 Test)', 3:'OOD (CIFAR-100 Test)',
+							  4:'OOD (CINIC Test)', 5:'OOD (LSUN)'}, axis=1)
+
+	# p_1 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+	# 				   element="bars", common_norm=False, ax=axes[0])
+	print(pd_data)
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (SVHN Train)", bins=20, element="bars",
+				 common_norm=False, color="gold", label="In-distribution (SVHN Train)",
+				 kde=False, ax=axes[0], alpha=1.0)
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (SVHN Test)", bins=20, element="bars",
+				 common_norm=False, color="orange", label="In-distribution (SVHN Test)",
+				 kde=False, ax=axes[0], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CIFAR-10 Test)", bins=20, element="bars",
+				 common_norm=False, color="skyblue", label="OOD (CIFAR-10 Test)",
+				 kde=False, ax=axes[0], alpha=0.6)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CIFAR-100 Test)", bins=20, element="bars",
+				 common_norm=False, color="green", label="OOD (CIFAR-100 Test)",
+				 kde=False, ax=axes[0], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CINIC Test)", bins=20, element="bars",
+				 common_norm=False, color="cyan", label="OOD (CINIC Test)",
+				 kde=False, ax=axes[0], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (LSUN)", bins=20, element="bars",
+				 common_norm=False, color="brown", label="OOD (LSUN)",
+				 kde=False, ax=axes[0], alpha=0.5)
+	# sns.histplot(data=pd_data, x="OOD (CIFAR-10 Test)", color="red", label="OOD (CIFAR-10 Test)", kde=True, ax=axes[0])
+
+	# axes[0].legend([], [], frameon=False)
+
+
+	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
+	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
+	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test})
+	df_ood_test_2 = pd.DataFrame({'ood_test_2': dc_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test_3': dc_ood_test_3})
+	df_ood_test_4 = pd.DataFrame({'ood_test_4': dc_ood_test_4})
+
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3, df_ood_test_4], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-distribution (SVHN Train)', 1: 'In-distribution (SVHN Test)',
+							  2: 'OOD (CIFAR-10 Test)', 3: 'OOD (CIFAR-100 Test)',
+							  4: 'OOD (CINIC Test)', 5:'OOD (LSUN)'}, axis=1)
+
+	# p_2 = sns.histplot(data=pd_data, stat="probability", bins=20, kde=kde,
+	# 				   element="bars", common_norm=False, ax=axes[1])
+
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (SVHN Train)", bins=20, element="bars",
+				 common_norm=False, color="gold", label="In-distribution (SVHN Train)",
+				 kde=False, ax=axes[1], alpha=1.0)
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (SVHN Test)", bins=20, element="bars",
+				 common_norm=False, color="orange", label="In-distribution (SVHN Test)",
+				 kde=False, ax=axes[1], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CIFAR-10 Test)", bins=20, element="bars",
+				 common_norm=False, color="skyblue", label="OOD (CIFAR-10 Test)",
+				 kde=False, ax=axes[1], alpha=0.6)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CIFAR-100 Test)", bins=20, element="bars",
+				 common_norm=False, color="green", label="OOD (CIFAR-100 Test)",
+				 kde=False, ax=axes[1], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CINIC Test)", bins=20, element="bars",
+				 common_norm=False, color="cyan", label="OOD (CINIC Test)",
+				 kde=False, ax=axes[1], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (LSUN)", bins=20, element="bars",
+				 common_norm=False, color="brown", label="OOD (LSUN)",
+				 kde=False, ax=axes[1], alpha=0.5)
+
+	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
+	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
+	df_ood_test = pd.DataFrame({'ood_test': pred_uncert_ood_test})
+	df_ood_test_2 = pd.DataFrame({'ood_test': pred_uncert_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test': pred_uncert_ood_test_3})
+	df_ood_test_4 = pd.DataFrame({'ood_test': pred_uncert_ood_test_4})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3, df_ood_test_4], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-distribution (SVHN Train)', 1: 'In-distribution (SVHN Test)',
+							  2: 'OOD (CIFAR-10 Test)', 3: 'OOD (CIFAR-100 Test)',
+							  4: 'OOD (CINIC Test)', 5: 'OOD (LSUN)'}, axis=1)
+
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (SVHN Train)", bins=80, element="bars",
+				 common_norm=False, color="gold", label="In-distribution (SVHN Train)",
+				 kde=False, ax=axes[2], alpha=1.0)
+	sns.histplot(data=pd_data, stat="probability", x="In-distribution (SVHN Test)", bins=80, element="bars",
+				 common_norm=False, color="orange", label="In-distribution (SVHN Test)",
+				 kde=False, ax=axes[2], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CIFAR-10 Test)", bins=80, element="bars",
+				 common_norm=False, color="skyblue", label="OOD (CIFAR-10 Test)",
+				 kde=False, ax=axes[2], alpha=0.6)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CIFAR-100 Test)", bins=80, element="bars",
+				 common_norm=False, color="green", label="OOD (CIFAR-100 Test)",
+				 kde=False, ax=axes[2], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (CINIC Test)", bins=80, element="bars",
+				 common_norm=False, color="cyan", label="OOD (CINIC Test)",
+				 kde=False, ax=axes[2], alpha=0.5)
+	sns.histplot(data=pd_data, stat="probability", x="OOD (LSUN)", bins=80, element="bars",
+				 common_norm=False, color="brown", label="OOD (LSUN)",
+				 kde=False, ax=axes[2], alpha=0.5)
+
+	kde_string = '_kde' if kde else ''
+	entropy_string = '_entropy' if plot_entropy else ''
+
+	plt.legend()
+	plt.savefig('paper_fig1_final_ext{}{}.png'.format(kde_string, entropy_string))
+	plt.savefig('paper_fig1_final_ext{}{}.pdf'.format(kde_string, entropy_string))
+	plt.close()
+
+
 
 def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	# TODO double check nans and infs, check results for p 0.2
@@ -3474,6 +3887,15 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	dc_ood_test = np.load(
 		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/ll_x_cifar_test_0.0_0.1_0.1_None.npy'
 	)
+	dc_ood_test_2 = np.load(
+		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/ll_x_cifar100_test_0.0_0.1_0.1_None.npy'
+	)
+	dc_ood_test_3 = np.load(
+		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/ll_x_cinic_test_0.0_0.1_0.1_None.npy'
+	)
+	dc_ood_test_4 = np.load(
+		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/ll_x_lsun_test_0.0_0.1_0.1_None.npy'
+	)
 
 	dc_in_domain_train_vars = np.load(
 		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/var_x_svhn_train_0.0_0.1_0.1_None.npy'
@@ -3483,6 +3905,15 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	)
 	dc_ood_test_vars = np.load(
 		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/var_x_cifar_test_0.0_0.1_0.1_None.npy'
+	)
+	dc_ood_test_vars_2 = np.load(
+		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/var_x_cifar100_test_0.0_0.1_0.1_None.npy'
+	)
+	dc_ood_test_vars_3 = np.load(
+		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/var_x_cinic_test_0.0_0.1_0.1_None.npy'
+	)
+	dc_ood_test_vars_4 = np.load(
+		'results/2022-09-28_07-57-19/model/post_hoc_results/closed_form/var_x_lsun_test_0.0_0.1_0.1_None.npy'
 	)
 
 	assert np.isnan(dc_in_domain_train).sum() == 0, "NaN values"
@@ -3495,6 +3926,9 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	dc_in_domain_train_waic = logsumexp(torch.tensor(dc_in_domain_train), torch.tensor(dc_in_domain_train_vars), mask=mask)
 	dc_in_domain_test_waic = logsumexp(torch.tensor(dc_in_domain_test), torch.tensor(dc_in_domain_test_vars), mask=mask)
 	dc_ood_test_waic = logsumexp(torch.tensor(dc_ood_test), torch.tensor(dc_ood_test_vars), mask=mask)
+	dc_ood_test_2_waic = logsumexp(torch.tensor(dc_ood_test_2), torch.tensor(dc_ood_test_vars_2), mask=mask)
+	dc_ood_test_3_waic = logsumexp(torch.tensor(dc_ood_test_3), torch.tensor(dc_ood_test_vars_3), mask=mask)
+	dc_ood_test_4_waic = logsumexp(torch.tensor(dc_ood_test_4), torch.tensor(dc_ood_test_vars_4), mask=mask)
 
 
 
@@ -3536,6 +3970,9 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	pred_uncert_in_train = dc_in_domain_train_vars * 0.5
 	pred_uncert_in_test = dc_in_domain_test_vars * 0.5
 	pred_uncert_ood_test = dc_ood_test_vars * 0.5
+	pred_uncert_ood_test_2 = dc_ood_test_vars_2 * 0.5
+	pred_uncert_ood_test_3 = dc_ood_test_vars_3 * 0.5
+	pred_uncert_ood_test_4 = dc_ood_test_vars_4 * 0.5
 
 	pc_cf_pred_uncert_in_train = pc_cf_in_domain_train_vars * 0.5
 	pc_cf_pred_uncert_in_test = pc_cf_in_domain_test_vars * 0.5
@@ -3544,14 +3981,18 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	ic(pred_uncert_in_train.mean())
 	ic(pred_uncert_in_test.mean())
 	ic(pred_uncert_ood_test.mean())
+	ic(pred_uncert_ood_test_2.mean())
+	ic(pred_uncert_ood_test_3.mean())
+	ic(pred_uncert_ood_test_4.mean())
 	ic(pc_cf_pred_uncert_in_train.mean())
 	ic(pc_cf_pred_uncert_in_test.mean())
 	ic(pc_cf_pred_uncert_ood_test.mean())
-	breakpoint()
 
 	fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(20, 15), tight_layout=False)
 
-	palette = {'In-domain (SVHN Train)': "yellow", 'In-domain (SVHN Test)': "red", 'OOD (CIFAR-10 Test)': "cyan"}
+	# palette = {'In-domain (SVHN Train)': "yellow", 'In-domain (SVHN Test)': "red", 'OOD (CIFAR-10 Test)': "cyan"}
+	palette = {'In-domain (SVHN Train)': "yellow", 'In-domain (SVHN Test)': "red", 'OOD (CIFAR-10 Test)': "cyan",
+			   'OOD (CIFAR-100 Test)': 'purple', 'OOD (CINIC Test)': 'blue', 'OOD (LSUN Test)': 'magenta'}
 
 
 
@@ -3603,7 +4044,7 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
 	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
 
-	p_2 = sns.histplot(data=pd_data, stat="probability", bins=10, kde=kde,
+	p_2 = sns.histplot(data=pd_data, stat="probability", bins=40, kde=kde,
 					   element="bars", common_norm=False, palette=palette, ax=axes[0][1])
 
 	df_in_train = pd.DataFrame({'in_train': pc_cf_pred_uncert_in_train})
@@ -3615,7 +4056,7 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 
 	# axes[1][1].set_xlim(0, .25)
 	# axes[1][1].set_ylim(0, .175)
-	p_3 = sns.histplot(data=pd_data, stat="probability", bins=10, kde=kde,
+	p_3 = sns.histplot(data=pd_data, stat="probability", bins=40, kde=kde,
 					   element="bars", common_norm=False, palette=palette, ax=axes[1][1])
 
 	# axes[1][0].set_title('Probabilistic Circuit + CF (Uncertainty)')
@@ -3629,24 +4070,38 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train})
 	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test})
 	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test})
-	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
-	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+	df_ood_test_2 = pd.DataFrame({'ood_test_2': dc_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test_3': dc_ood_test_3})
+	df_ood_test_4 = pd.DataFrame({'ood_test_4': dc_ood_test_4})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
+	# pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)',
+							  3: 'OOD (CIFAR-100 Test)', 4: 'OOD (CINIC Test)'},
+							 axis=1)
 
 
-	p_4 = sns.histplot(data=pd_data, stat="probability", bins=10, kde=kde,
+	p_4 = sns.histplot(data=pd_data, stat="probability", bins=40, kde=kde,
 					   element="bars", common_norm=False, palette=palette, ax=axes[0][2])
+
+
 
 	df_in_train = pd.DataFrame({'in_train': pred_uncert_in_train})
 	df_in_test = pd.DataFrame({'in_test': pred_uncert_in_test})
 	df_ood_test = pd.DataFrame({'ood_test': pred_uncert_ood_test})
-	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
-	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+	df_ood_test_2 = pd.DataFrame({'ood_test_2': pred_uncert_ood_test_2})
+	df_ood_test_3 = pd.DataFrame({'ood_test_3': pred_uncert_ood_test_3})
+	df_ood_test_4 = pd.DataFrame({'ood_test_4': pred_uncert_ood_test_4})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
+	# pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'}, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', #2: 'OOD (CIFAR-10 Test)',
+							  2: 'OOD (CIFAR-100 Test)', 3: 'OOD (CINIC Test)'},
+							 axis=1)
 
 
 	# axes[1][2].set_xlim(0, .25)
 	# axes[1][2].set_ylim(0, .175)
 
-	p_5 = sns.histplot(data=pd_data, stat="probability", bins=10, kde=kde,
+	p_5 = sns.histplot(data=pd_data, stat="probability", bins=40, kde=kde,
 					   element="bars", common_norm=False, palette=palette, ax=axes[1][2])
 
 	df_in_train = pd.DataFrame({'in_train': pc_cf_in_domain_train_waic})
@@ -3655,16 +4110,22 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
 	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'},
 							 axis=1)
-	p_6 = sns.histplot(data=pd_data, stat="probability", bins=10, kde=kde,
+	p_6 = sns.histplot(data=pd_data, stat="probability", bins=40, kde=kde,
 					   element="bars", common_norm=False, palette=palette, ax=axes[2][1])
+
+
 
 	df_in_train = pd.DataFrame({'in_train': dc_in_domain_train_waic})
 	df_in_test = pd.DataFrame({'in_test': dc_in_domain_test_waic})
 	df_ood_test = pd.DataFrame({'ood_test': dc_ood_test_waic})
-	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test], ignore_index=True, axis=1)
-	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)'},
+	df_ood_test_2 = pd.DataFrame({'ood_test_2': dc_ood_test_2_waic})
+	df_ood_test_3 = pd.DataFrame({'ood_test_3': dc_ood_test_3_waic})
+	df_ood_test_4 = pd.DataFrame({'ood_test_4': dc_ood_test_4_waic})
+	pd_data = pd.concat([df_in_train, df_in_test, df_ood_test, df_ood_test_2, df_ood_test_3], ignore_index=True, axis=1)
+	pd_data = pd_data.rename({0: 'In-domain (SVHN Train)', 1: 'In-domain (SVHN Test)', 2: 'OOD (CIFAR-10 Test)',
+							  3: 'OOD (CIFAR-100 Test)', 4: 'OOD (CINIC Test)'},
 							 axis=1)
-	p_7 = sns.histplot(data=pd_data, stat="probability", bins=10, kde=kde,
+	p_7 = sns.histplot(data=pd_data, stat="probability", bins=40, kde=kde,
 					   element="bars", common_norm=False, palette=palette, ax=axes[2][2])
 
 
@@ -3676,17 +4137,2120 @@ def gen_figure1_svhn_generative(kde=False, plot_entropy=False):
 	plt.savefig('paper_fig1_svhn_gen2_{}{}.pdf'.format(kde_string, entropy_string))
 	plt.close()
 
+def gather_mnist_c_data(pc_dir = '', dc_dir = '', dropout_learning=None, dropout_inference=None, lmbda=None):
+	import mnist_c.corruptions as corruptions
+
+	pc_d = pc_dir
+	dc_d = dc_dir
+
+	severity = [1, 2, 3, 4, 5]
+	corruption_method = [corruptions.brightness, corruptions.shot_noise, corruptions.impulse_noise,
+						 corruptions.glass_blur, corruptions.motion_blur, corruptions.shear, corruptions.scale,
+						 corruptions.rotate, corruptions.translate, corruptions.fog, corruptions.spatter]
+	corruption_methods_no_severity = [corruptions.stripe, corruptions.dotted_line, corruptions.zigzag,
+									  corruptions.canny_edges]
+	corruption_methods_full = []
+	corruption_methods_full.extend(corruption_method)
+	corruption_methods_full.extend(corruption_methods_no_severity)
+
+	pc_confidences = {}
+	dc_confidences = {}
+	dc_variances = {}
+
+	pc_cf_confidences = {}
+	pc_cf_variances = {}
+
+	for cm in corruption_methods_full:
+		if cm in corruption_methods_no_severity: severity = [None]
+		for sl in severity:
+			fold = 'test'
+			training_dataset = 'mnist'
+			key_str = '{}_{}'.format(cm.__name__, sl)
+			pc_confidences[key_str] = np.load(pc_d + 'output_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, 0.0, 0.0, cm.__name__, sl))
+			pc_cf_confidences[key_str] = np.load(pc_d + 'output_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, 0.0, dropout_inference, cm.__name__, sl))
+			pc_cf_variances[key_str] = np.load(pc_d + 'var_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, 0.0, dropout_inference, cm.__name__, sl))
+			dc_confidences[key_str] = np.load(dc_d + 'output_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl))
+			dc_variances[key_str] = np.load(dc_d + 'var_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, dropout_learning, dropout_inference, cm.__name__, sl))
+
+	return pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances
+
+
+
+def plot_boxplots_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=3):
+	mnist_test_dataset = datasets.MNIST(root='./data', download=True, train=False, transform=None)
+	mnist_test_targets = mnist_test_dataset.targets.numpy()
+
+	import mnist_c.corruptions as corruptions
+	severity_levels = [1, 2, 3, 4, 5]
+	corruption_method = [corruptions.brightness, corruptions.shot_noise, corruptions.impulse_noise,
+						 corruptions.glass_blur, corruptions.motion_blur, corruptions.shear, corruptions.scale,
+						 corruptions.rotate, corruptions.translate, corruptions.fog, corruptions.spatter]
+	corruption_methods_no_severity = [corruptions.stripe, corruptions.dotted_line, corruptions.zigzag,
+									  corruptions.canny_edges]
+	corruption_methods_full = []
+	corruption_methods_full.extend(corruption_method)
+	corruption_methods_full.extend(corruption_methods_no_severity)
+
+
+	pc_confidences_filtered = [pc_confidences['{}_{}'.format(corruption.__name__, severity)] for corruption in corruption_method]
+	pc_confidences_filtered.extend([pc_confidences['{}_None'.format(corruption.__name__)] for corruption in corruption_methods_no_severity])
+
+	pc_cf_confidences_filtered = [pc_cf_confidences['{}_{}'.format(corruption.__name__, severity)] for corruption in corruption_method]
+	pc_cf_confidences_filtered.extend(
+		[pc_cf_confidences['{}_None'.format(corruption.__name__)] for corruption in corruption_methods_no_severity])
+
+	dc_confidences_filtered = [dc_confidences['{}_{}'.format(corruption.__name__, severity)] for corruption in corruption_method]
+	dc_confidences_filtered.extend(
+		[dc_confidences['{}_None'.format(corruption.__name__)] for corruption in corruption_methods_no_severity])
+
+
+	pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}_{}'.format(corruption.__name__, severity)],
+												   np.expand_dims(np.argmax(pc_cf_confidences['{}_{}'.format(corruption.__name__, severity)], axis=1), axis=1),
+												   axis=1) for corruption in corruption_method]
+
+	pc_cf_variances_filtered.extend(
+		[np.take_along_axis(pc_cf_variances['{}_None'.format(corruption.__name__)],
+							np.expand_dims(np.argmax(pc_cf_confidences['{}_None'.format(corruption.__name__)], axis=1),
+										   axis=1),
+							axis=1) for corruption in corruption_methods_no_severity])
+
+	dc_variances_filtered = [np.take_along_axis(dc_variances['{}_{}'.format(corruption.__name__, severity)],
+												   np.expand_dims(
+													   np.argmax(dc_confidences['{}_{}'.format(corruption.__name__, severity)],
+																 axis=1), axis=1),
+												   axis=1) for corruption in corruption_method]
+
+	dc_variances_filtered.extend(
+		[np.take_along_axis(dc_variances['{}_None'.format(corruption.__name__)],
+							np.expand_dims(np.argmax(dc_confidences['{}_None'.format(corruption.__name__)], axis=1),
+										   axis=1),
+							axis=1) for corruption in corruption_methods_no_severity])
+
+
+
+	confs_pc = [entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1)
+				for cp in pc_confidences_filtered]
+	confs_pc_cf = [entropy(np.exp(cp), axis=1) for cp in pc_cf_confidences_filtered]
+	confs_dc = [entropy(np.exp(cp), axis=1) for cp in dc_confidences_filtered]
+
+	confs_pc = np.column_stack((confs_pc))
+	confs_pc_cf = np.column_stack((confs_pc_cf))
+	confs_dc = np.column_stack((confs_dc))
+
+	pc_cf_vars = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+	dc_vars = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+	fig, axes = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=False, figsize=(16, 8), tight_layout=True)
+	labels = ['SN', 'IN', 'GB', 'MB', 'SH', 'SC', 'RO', 'BR', 'TR', 'ST', 'FO', 'SP', 'DO', 'ZI', 'CA']
+	axes[0][0].set_ylim(0., 2.5)
+	axes[0][1].set_ylim(0., 2.5)
+	axes[0][2].set_ylim(0., 2.5)
+
+	medianprops = dict(linestyle='-.', linewidth=2, color='green')
+	meanlineprops = dict(linestyle='--', linewidth=1, color='purple')
+	meanpointprops = dict(marker='D', markeredgecolor='black', markerfacecolor='indianred')
+
+
+
+
+	bp1 = axes[0][0].boxplot(confs_pc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp2 = axes[0][1].boxplot(confs_pc_cf, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp3 = axes[0][2].boxplot(confs_dc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	# axes[0][0].get_xaxis().set_ticks([])
+	# axes[0][1].get_xaxis().set_ticks([])
+	bp4 = axes[1][1].boxplot(pc_cf_vars, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp5 = axes[1][2].boxplot(dc_vars, medianprops=medianprops, meanprops=meanpointprops,
+							 showmeans=True, meanline=False, labels=labels, showfliers=False,
+							 patch_artist=True)
+
+	axes[0][0].set_title('Probabilistic Circuits')
+	axes[0][1].set_title('Probabilistic Circuits + CF')
+	axes[0][2].set_title('Dropout Circuits')
+	axes[1][1].set_title('Probabilistic Circuits + CF')
+	axes[1][2].set_title('Dropout Circuits')
+
+	plt.setp(bp1['boxes'], facecolor='linen')
+	plt.setp(bp2['boxes'], facecolor='linen')
+	plt.setp(bp3['boxes'], facecolor='linen')
+	plt.setp(bp4['boxes'], facecolor='lightcyan')
+	plt.setp(bp5['boxes'], facecolor='lightcyan')
+
+	axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold')
+	axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold')
+	# axes[3].get_yaxis().set_ticks([])
+
+
+	axes[1][1].set_ylim(-0.1, 2)
+	axes[1][2].set_ylim(-0.1, 2)
+
+	axes[0][0].yaxis.grid(True, linestyle='--')
+	axes[0][1].yaxis.grid(True, linestyle='--')
+	axes[0][2].yaxis.grid(True, linestyle='--')
+	axes[1][1].yaxis.grid(True, linestyle='--')
+	axes[1][2].yaxis.grid(True, linestyle='--')
+
+	ax = plt.gca()
+	ax.set_xlabel(' ')
+	fig.text(0.5, 0.03, "corruption ID (severity {})".format(severity), ha="center", va="center", fontsize='large')
+	fig.suptitle('Corrupted MNIST', fontsize='large', fontweight='bold')
+	plt.savefig('boxplots_mnist_c_{}.png'.format(severity))
+	plt.savefig('boxplots_mnist_c_{}.pdf'.format(severity))
+	plt.close()
+
+	for corruption in corruption_method:
+		ic(corruption.__name__)
+		pc_confidences_filtered = [pc_confidences['{}_{}'.format(corruption.__name__, severity)] for severity in
+								   severity_levels]
+		pc_accuracy = [(cp.argmax(axis=1) == mnist_test_targets).sum() / mnist_test_targets.size for cp in
+					   pc_confidences_filtered]
+		pc_cf_confidences_filtered = [pc_cf_confidences['{}_{}'.format(corruption.__name__, severity)] for severity in
+									  severity_levels]
+		pc_cf_accuracy = [(cp.argmax(axis=1) == mnist_test_targets).sum() / mnist_test_targets.size for cp in
+					   pc_cf_confidences_filtered]
+		dc_confidences_filtered = [dc_confidences['{}_{}'.format(corruption.__name__, severity)] for severity in
+								   severity_levels]
+		dc_accuracy = [(cp.argmax(axis=1) == mnist_test_targets).sum() / mnist_test_targets.size for cp in
+					   dc_confidences_filtered]
+
+
+		pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}_{}'.format(corruption.__name__, severity)],
+													   np.expand_dims(np.argmax(pc_cf_confidences[
+																					'{}_{}'.format(corruption.__name__,
+																								   severity)], axis=1),
+																	  axis=1),
+													   axis=1) for severity in severity_levels]
+
+
+		dc_variances_filtered = [np.take_along_axis(dc_variances['{}_{}'.format(corruption.__name__, severity)],
+													np.expand_dims(
+														np.argmax(dc_confidences[
+																	  '{}_{}'.format(corruption.__name__, severity)],
+																  axis=1), axis=1),
+													axis=1) for severity in severity_levels]
+
+		confs_pc = [
+			entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1)
+			for cp in pc_confidences_filtered
+		]
+		confs_pc_cf = [entropy(np.exp(cp), axis=1) for cp in pc_cf_confidences_filtered]
+		confs_dc = [entropy(np.exp(cp), axis=1) for cp in dc_confidences_filtered]
+
+		confs_pc = np.column_stack((confs_pc))
+		confs_pc_cf = np.column_stack((confs_pc_cf))
+		confs_dc = np.column_stack((confs_dc))
+
+		pc_cf_vars = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+		dc_vars = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+		fig, axes = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=False, figsize=(16, 8), tight_layout=True)
+		axes[0][0].set_ylim(0., 2.5)
+		axes[0][1].set_ylim(0., 2.5)
+		axes[0][2].set_ylim(0., 2.5)
+
+		medianprops = dict(linestyle='-.', linewidth=2, color='green')
+		meanlineprops = dict(linestyle='--', linewidth=1, color='purple')
+		meanpointprops = dict(marker='D', markeredgecolor='black', markerfacecolor='indianred')
+
+		bp1 = axes[0][0].boxplot(confs_pc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+								 meanline=False, labels=severity_levels, showfliers=False, patch_artist=True)
+		bp2 = axes[0][1].boxplot(confs_pc_cf, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+								 meanline=False, labels=severity_levels, showfliers=False, patch_artist=True)
+		bp3 = axes[0][2].boxplot(confs_dc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+								 meanline=False, labels=severity_levels, showfliers=False, patch_artist=True)
+		# axes[0][0].get_xaxis().set_ticks([])
+		# axes[0][1].get_xaxis().set_ticks([])
+		bp4 = axes[1][1].boxplot(pc_cf_vars, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+								 meanline=False, labels=severity_levels, showfliers=False, patch_artist=True)
+		bp5 = axes[1][2].boxplot(dc_vars, medianprops=medianprops, meanprops=meanpointprops,
+								 showmeans=True, meanline=False, labels=severity_levels, showfliers=False,
+								 patch_artist=True)
+
+		axes[0][0].set_title('Probabilistic Circuits')
+		axes[0][1].set_title('Probabilistic Circuits + CF')
+		axes[0][2].set_title('Dropout Circuits')
+		axes[1][1].set_title('Probabilistic Circuits + CF')
+		axes[1][2].set_title('Dropout Circuits')
+
+		plt.setp(bp1['boxes'], facecolor='linen')
+		plt.setp(bp2['boxes'], facecolor='linen')
+		plt.setp(bp3['boxes'], facecolor='linen')
+		plt.setp(bp4['boxes'], facecolor='lightcyan')
+		plt.setp(bp5['boxes'], facecolor='lightcyan')
+
+		axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold')
+		axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold')
+		# axes[3].get_yaxis().set_ticks([])
+
+		axes[1][1].set_ylim(-0.1, 2)
+		axes[1][2].set_ylim(-0.1, 2)
+
+		axes[0][0].yaxis.grid(True, linestyle='--')
+		axes[0][1].yaxis.grid(True, linestyle='--')
+		axes[0][2].yaxis.grid(True, linestyle='--')
+		axes[1][1].yaxis.grid(True, linestyle='--')
+		axes[1][2].yaxis.grid(True, linestyle='--')
+
+		ax = plt.gca()
+		ax.set_xlabel(' ')
+		fig.text(0.5, 0.03, "corruption ID (severity {})".format(corruption.__name__), ha="center", va="center", fontsize='large')
+		fig.suptitle('Corrupted MNIST', fontsize='large', fontweight='bold')
+		plt.savefig('boxplots_mnist_c_{}.png'.format(corruption.__name__))
+		plt.savefig('boxplots_mnist_c_{}.pdf'.format(corruption.__name__))
+		plt.close()
+
+		fig, axes = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=False, figsize=(16, 8), tight_layout=True)
+		axes[0][0].set_ylim(0., 2.5)
+		axes[0][1].set_ylim(0., 2.5)
+		axes[0][2].set_ylim(0., 2.5)
+
+		medianprops = dict(linestyle='-.', linewidth=2, color='green')
+		meanlineprops = dict(linestyle='--', linewidth=1, color='purple')
+		meanpointprops = dict(marker='D', markeredgecolor='black', markerfacecolor='indianred')
+
+		axes[0][0].scatter(x=severity_levels, y=[np.median(epc) for epc in confs_pc.T], color='royalblue')
+		axes[0][1].scatter(x=severity_levels, y=[np.median(epc) for epc in confs_pc_cf.T], color='royalblue')
+		axes[0][2].scatter(x=severity_levels, y=[np.median(epc) for epc in confs_dc.T], color='royalblue')
+		axes[1][1].scatter(x=severity_levels, y=[np.median(epc) for epc in pc_cf_vars.T], color='royalblue')
+		axes[1][2].scatter(x=severity_levels, y=[np.median(epc) for epc in dc_vars.T], color='royalblue')
+
+		axes[0][0].scatter(x=severity_levels, y=pc_accuracy, color='orange')
+		axes[0][1].scatter(x=severity_levels, y=pc_cf_accuracy, color='orange')
+		axes[0][2].scatter(x=severity_levels, y=dc_accuracy, color='orange')
+
+		axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold', color='royalblue')
+		axes[0][0].set_ylim(-0.1, 2.5)
+		axes[0][1].set_ylim(-0.1, 2.5)
+		axes[0][2].set_ylim(-0.1, 2.5)
+		axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold', color='royalblue')
+		axes[1][1].set_ylim(-0.1, 0.5)
+		axes[1][2].set_ylim(-0.1, 0.5)
+		axes[0][0].get_xaxis().set_ticks([])
+		axes[0][1].get_xaxis().set_ticks([])
+		axes[0][2].get_xaxis().set_ticks([])
+		axes[1][0].get_xaxis().set_ticks(severity_levels)
+		axes[1][1].get_xaxis().set_ticks(severity_levels)
+		axes[1][2].get_xaxis().set_ticks(severity_levels)
+		ax4 = axes[0][2].secondary_yaxis('right')
+		ax4.set_ylabel('classification accuracy', color='orange', fontweight='bold', fontsize='large')
+
+		axes[0][0].grid(True)
+		axes[0][1].grid(True)
+		axes[0][2].grid(True)
+		axes[1][1].grid(True)
+		axes[1][2].grid(True)
+
+		axes[0][0].set_title('Probabilistic Circuits')
+		axes[0][1].set_title('Probabilistic Circuits + CF')
+		axes[0][2].set_title('Dropout Circuits')
+		axes[1][1].set_title('Probabilistic Circuits + CF')
+		axes[1][2].set_title('Dropout Circuits')
+
+		axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold')
+		axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold')
+
+		ax = plt.gca()
+		ax.set_xlabel(' ')
+		fig.text(0.5, 0.03, "severity level (corruption ID {})".format(corruption.__name__), ha="center", va="center",
+				 fontsize='large')
+		fig.suptitle('Corrupted MNIST', fontsize='large', fontweight='bold')
+		plt.savefig('plot_mnist_c_{}.png'.format(corruption.__name__))
+		plt.savefig('plot_mnist_c_{}.pdf'.format(corruption.__name__))
+		plt.close()
+
+		np.random.seed(32)
+
+		# Enable pgf module
+		matplotlib.use("pgf")
+		matplotlib.rcParams.update(
+			{
+				"pgf.texsystem": "pdflatex",
+				"font.family": "serif",
+				"text.usetex": True,
+				"pgf.rcfonts": False,
+			}
+		)
+
+		# Use SciencePlots  |  pip install SciencePlots
+		plt.style.use(["science", "grid"])
+
+		scale = 1.0
+		num_columns = 1
+		"""Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+		# Compute optimal figure sizes
+		columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+		textwidth = columnwidth_pt / 72  # pt to inch
+		aspect_ratio = (5.0 ** 0.5 - 1.0) / 2.0  # golden ratio
+		aspect_ratio *= num_columns
+		scale = 1.0 / num_columns
+		width = textwidth * scale
+		height = width * aspect_ratio
+
+		# def entropy(data: np.ndarray) -> np.ndarray:
+		# 	return -1 * np.sum(data * np.log(data), axis=-1)
+
+
+		# Open figure
+		fig, axes = plt.subplots(nrows=1, ncols=3, sharex=False, sharey=False, figsize=(15, 5), tight_layout=True)
+
+		# Plot data
+		axes[0].scatter(x=severity_levels, y=[np.median(epc) for epc in confs_pc.T])
+		axes[1].scatter(x=severity_levels, y=[np.median(epc) for epc in confs_dc.T])
+		axes[2].scatter(x=severity_levels, y=[np.median(epc) for epc in dc_vars.T])
+
+		# # Adjust legends
+		# legend = plt.legend(labels=labels, fancybox=False, edgecolor="black", loc="best")
+		# legend.get_frame().set_linewidth(0.5)
+
+		# Set labels
+		# plt.xlabel("Rotation (degrees)")
+		plt.xlim(0, 2.3)
+		plt.ylim(0, 4)
+		rle = 2 if corruption.__name__ == 'brightness' else 2.2
+		rlu = 0.05 if corruption.__name__ == 'brightness' else 0.07
+		axes[0].set_ylabel('Predictive Entropy', fontsize='large', fontweight='bold')
+		axes[0].set_ylim(-0.01, rle)
+		axes[1].set_ylim(-0.01, rle)
+		axes[2].set_ylim(0, rlu)
+		axes[2].set_ylabel('Predictive Uncertainty', fontsize='large', fontweight='bold')
+
+		# axes[0][0].get_xaxis().set_ticks([])
+		# axes[0][1].get_xaxis().set_ticks([])
+		# axes[0][2].get_xaxis().set_ticks([])
+		axes[0].get_xaxis().set_ticks(severity_levels)
+		axes[1].get_xaxis().set_ticks(severity_levels)
+		axes[2].get_xaxis().set_ticks(severity_levels)
+		# axes[1].get_yaxis().set_ticks([])
+		fig.text(0.5, 0.01, "Severity Level (Corruption {})".format(corruption.__name__.replace("_", " ").title()),
+				 ha="center", va="center", fontsize='large')
+		axes[0].set_title('Probabilistic Circuits')
+		axes[1].set_title('Dropout Circuits')
+		axes[2].set_title('Dropout Circuits')
+
+		axes[0].grid(True)
+		axes[1].grid(True)
+		axes[2].grid(True)
+
+		# Save figure
+		name = "figure-4_{}".format(corruption.__name__)
+		plt.savefig(name + ".pgf")
+		plt.savefig(name + ".pdf")
+		plt.savefig(name + ".jpg", dpi=300)
+		plt.close()
+
+
+
+def plot_histograms_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances):
+	mnist_test_dataset = datasets.MNIST(root='./data', download=True, train=False, transform=None)
+	mnist_test_targets = mnist_test_dataset.targets.numpy()
+
+
+	import mnist_c.corruptions as corruptions
+	severity = [1, 2, 3, 4, 5]
+	corruption_method = [corruptions.brightness, corruptions.shot_noise, corruptions.impulse_noise,
+						 corruptions.glass_blur, corruptions.motion_blur, corruptions.shear, corruptions.scale,
+						 corruptions.rotate, corruptions.translate, corruptions.fog, corruptions.spatter]
+	corruption_methods_no_severity = [corruptions.stripe, corruptions.dotted_line, corruptions.zigzag,
+									  corruptions.canny_edges]
+	corruption_methods_full = []
+	corruption_methods_full.extend(corruption_method)
+	corruption_methods_full.extend(corruption_methods_no_severity)
+
+	pc_confidences_filtered = [pc_confidences['{}_3'.format(corruption.__name__)] for corruption in corruption_method]
+	pc_confidences_filtered.extend([pc_confidences['{}_None'.format(corruption.__name__)] for corruption in corruption_methods_no_severity])
+
+	pc_cf_confidences_filtered = [pc_cf_confidences['{}_3'.format(corruption.__name__)] for corruption in corruption_method]
+	pc_cf_confidences_filtered.extend(
+		[pc_cf_confidences['{}_None'.format(corruption.__name__)] for corruption in corruption_methods_no_severity])
+
+	dc_confidences_filtered = [dc_confidences['{}_3'.format(corruption.__name__)] for corruption in corruption_method]
+	dc_confidences_filtered.extend(
+		[dc_confidences['{}_None'.format(corruption.__name__)] for corruption in corruption_methods_no_severity])
+
+
+	pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}_3'.format(corruption.__name__)],
+												   np.expand_dims(np.argmax(pc_cf_confidences['{}_3'.format(corruption.__name__)], axis=1), axis=1),
+												   axis=1) for corruption in corruption_method]
+
+	pc_cf_variances_filtered.extend(
+		[np.take_along_axis(pc_cf_variances['{}_None'.format(corruption.__name__)],
+							np.expand_dims(np.argmax(pc_cf_confidences['{}_None'.format(corruption.__name__)], axis=1),
+										   axis=1),
+							axis=1) for corruption in corruption_methods_no_severity])
+
+	dc_variances_filtered = [np.take_along_axis(dc_variances['{}_3'.format(corruption.__name__)],
+												   np.expand_dims(
+													   np.argmax(dc_confidences['{}_3'.format(corruption.__name__)],
+																 axis=1), axis=1),
+												   axis=1) for corruption in corruption_method]
+
+	dc_variances_filtered.extend(
+		[np.take_along_axis(dc_variances['{}_None'.format(corruption.__name__)],
+							np.expand_dims(np.argmax(dc_confidences['{}_None'.format(corruption.__name__)], axis=1),
+										   axis=1),
+							axis=1) for corruption in corruption_methods_no_severity])
+
+
+	entropy_pc = [entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)),
+						  axis=1) for cp in pc_confidences_filtered]
+	entropy_pc_cf = [entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)),
+							 axis=1) for cp in pc_cf_confidences_filtered]
+	entropy_dc = [entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)),
+						  axis=1) for cp in dc_confidences_filtered]
+
+	entropy_pc = np.column_stack((entropy_pc))
+	entropy_pc_cf = np.column_stack((entropy_pc_cf))
+	entropy_dc = np.column_stack((entropy_dc))
+	pc_cf_variances = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+	dc_variances = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+	np.random.seed(32)
+	matplotlib.use("pgf")
+	matplotlib.rcParams.update(
+		{
+			"pgf.texsystem": "pdflatex",
+			"font.family": "serif",
+			"text.usetex": True,
+			"pgf.rcfonts": False,
+		}
+	)
+	# Use SciencePlots  |  pip install SciencePlots
+	plt.style.use(["science", "grid"])
+
+
+	fig, axes = plt.subplots(nrows=2, ncols=3, sharex=True, sharey=True, figsize=(16, 8), tight_layout=True)
+	labels = ['SN', 'IN', 'GB', 'MB', 'SH', 'SC', 'RO', 'BR', 'TR', 'ST', 'FO', 'SP', 'DO', 'ZI', 'CA']
+
+	medianprops = dict(linestyle='-.', linewidth=2, color='green')
+	meanlineprops = dict(linestyle='--', linewidth=1, color='purple')
+	meanpointprops = dict(marker='D', markeredgecolor='black', markerfacecolor='indianred')
+
+	# breakpoint()
+
+
+	for el in entropy_pc:
+		sns.kdeplot(el, fill=True, cut=1, common_norm=False, axes=axes[0][0])
+
+	bp2 = axes[0][1].boxplot(entropy_pc_cf, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp3 = axes[0][2].boxplot(entropy_dc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	# axes[0][0].get_xaxis().set_ticks([])
+	# axes[0][1].get_xaxis().set_ticks([])
+	bp4 = axes[1][1].boxplot(pc_cf_variances, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp5 = axes[1][2].boxplot(dc_variances, medianprops=medianprops, meanprops=meanpointprops,
+							 showmeans=True, meanline=False, labels=labels, showfliers=False,
+							 patch_artist=True)
+
+	axes[0][0].set_title('Probabilistic Circuits')
+	axes[0][1].set_title('Probabilistic Circuits + CF')
+	axes[0][2].set_title('Dropout Circuits')
+	axes[1][1].set_title('Probabilistic Circuits + CF')
+	axes[1][2].set_title('Dropout Circuits')
+
+	plt.setp(bp1['boxes'], facecolor='linen')
+	plt.setp(bp2['boxes'], facecolor='linen')
+	plt.setp(bp3['boxes'], facecolor='linen')
+	plt.setp(bp4['boxes'], facecolor='lightcyan')
+	plt.setp(bp5['boxes'], facecolor='lightcyan')
+
+	axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold')
+	# axes[0][0].set_ylim(0, 3)
+	# axes[0][1].set_ylim(0, 3)
+	# axes[0][2].set_ylim(0, 3)
+	axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold')
+	# axes[3].get_yaxis().set_ticks([])
+	# axes[1][1].set_ylim(-0.1, 3)
+	# axes[1][2].set_ylim(-0.1, 3)
+
+	axes[0][0].yaxis.grid(True, linestyle='--')
+	axes[0][1].yaxis.grid(True, linestyle='--')
+	axes[0][2].yaxis.grid(True, linestyle='--')
+	axes[1][1].yaxis.grid(True, linestyle='--')
+	axes[1][2].yaxis.grid(True, linestyle='--')
+
+	ax = plt.gca()
+	ax.set_xlabel(' ')
+	fig.text(0.5, 0.03, "corruption ID", ha="center", va="center", fontsize='large')
+	fig.suptitle('Corrupted MNIST', fontsize='large', fontweight='bold')
+	plt.savefig('histograms_mnist_c.png')
+	plt.savefig('histograms_mnist_c.pdf')
+	plt.close()
+
+def plot_boxplots_rotating_mnist(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances):
+	mnist_test_dataset = datasets.MNIST(root='./data', download=True, train=False, transform=None)
+	mnist_test_targets = mnist_test_dataset.targets.numpy()
+
+	rotations = [i for i in range(0, 95, 5)]
+	pc_confidences_filtered = [pc_confidences['{}'.format(rotation)] for rotation in rotations]
+	pc_accuracy = [(cp.argmax(axis=1) == mnist_test_targets).sum() / mnist_test_targets.size for cp in pc_confidences_filtered]
+
+	pc_cf_confidences_filtered = [pc_cf_confidences['{}'.format(rotation)] for rotation in
+								  rotations]
+	pc_cf_accuracy = [(cp.argmax(axis=1) == mnist_test_targets).sum() / mnist_test_targets.size for cp in
+					  pc_cf_confidences_filtered]
+	dc_confidences_filtered = [dc_confidences['{}'.format(rotation)] for rotation in rotations]
+	dc_accuracy = [(cp.argmax(axis=1) == mnist_test_targets).sum() / mnist_test_targets.size for cp in
+					  dc_confidences_filtered]
+
+
+	pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}'.format(rotation)],
+												   np.expand_dims(
+													   np.argmax(pc_cf_confidences['{}'.format(rotation)],
+																 axis=1), axis=1),
+												   axis=1) for rotation in rotations]
+
+
+
+	dc_variances_filtered = [np.take_along_axis(dc_variances['{}'.format(rotation)],
+												np.expand_dims(
+													np.argmax(dc_confidences['{}'.format(rotation)],
+															  axis=1), axis=1),
+												axis=1) for rotation in rotations]
+
+
+	entropy_pc = [
+		entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+		in pc_confidences_filtered]
+	entropy_pc_cf = [entropy(np.exp(cp), axis=1) for cp in pc_cf_confidences_filtered]
+	entropy_dc = [entropy(np.exp(cp), axis=1) for cp in dc_confidences_filtered]
+	# entropy_pc_cf = [
+	# 	entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+	# 	in pc_cf_confidences_filtered]
+	# entropy_dc = [
+	# 	entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+	# 	in dc_confidences_filtered]
+
+	entropy_pc = np.column_stack((entropy_pc))
+	entropy_pc_cf = np.column_stack((entropy_pc_cf))
+	entropy_dc = np.column_stack((entropy_dc))
+	pc_cf_variances = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+	dc_variances = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+	fig, axes = plt.subplots(nrows=2, ncols=3, sharex=False, sharey=False, figsize=(16, 8), tight_layout=True)
+	labels = rotations
+
+	# medianprops = dict(linestyle='-.', linewidth=2, color='green')
+	# meanlineprops = dict(linestyle='--', linewidth=1, color='purple')
+	# meanpointprops = dict(marker='D', markeredgecolor='black', markerfacecolor='indianred')
+	#
+	# bp1 = axes[0][0].boxplot(entropy_pc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+	# 						 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	# bp2 = axes[0][1].boxplot(entropy_pc_cf, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+	# 						 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	# bp3 = axes[0][2].boxplot(entropy_dc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+	# 						 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	# # axes[0][0].get_xaxis().set_ticks([])
+	# # axes[0][1].get_xaxis().set_ticks([])
+	# bp4 = axes[1][1].boxplot(pc_cf_variances, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+	# 						 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	# bp5 = axes[1][2].boxplot(dc_variances, medianprops=medianprops, meanprops=meanpointprops,
+	# 						 showmeans=True, meanline=False, labels=labels, showfliers=False,
+	# 						 patch_artist=True)
+	# plt.setp(bp1['boxes'], facecolor='linen')
+	# plt.setp(bp2['boxes'], facecolor='linen')
+	# plt.setp(bp3['boxes'], facecolor='linen')
+	# plt.setp(bp4['boxes'], facecolor='lightcyan')
+	# plt.setp(bp5['boxes'], facecolor='lightcyan')
+	#
+	# axes[0][0].yaxis.grid(True, linestyle='--')
+	# axes[0][1].yaxis.grid(True, linestyle='--')
+	# axes[0][2].yaxis.grid(True, linestyle='--')
+	# axes[1][1].yaxis.grid(True, linestyle='--')
+	# axes[1][2].yaxis.grid(True, linestyle='--')
+
+	# axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold')
+	# axes[0][0].set_ylim(-0.1, 2.2)
+	# axes[0][1].set_ylim(-0.1, 2.2)
+	# axes[0][2].set_ylim(-0.1, 2.2)
+	# axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold')
+	# # axes[3].get_yaxis().set_ticks([])
+	# axes[1][1].set_ylim(-0.1, 2.1)
+	# axes[1][2].set_ylim(-0.1, 0.4)
+
+
+	axes[0][0].set_title('Probabilistic Circuits')
+	axes[0][1].set_title('Probabilistic Circuits + CF')
+	axes[0][2].set_title('Dropout Circuits')
+	axes[1][1].set_title('Probabilistic Circuits + CF')
+	axes[1][2].set_title('Dropout Circuits')
+
+	axes[0][0].scatter(x=labels, y=[np.median(epc) for epc in entropy_pc.T], color='royalblue')
+	axes[0][1].scatter(x=labels, y=[np.median(epc) for epc in entropy_pc_cf.T], color='royalblue')
+	axes[0][2].scatter(x=labels, y=[np.median(epc) for epc in entropy_dc.T], color='royalblue')
+	axes[1][1].scatter(x=labels, y=[np.median(epc) for epc in pc_cf_variances.T], color='royalblue')
+	axes[1][2].scatter(x=labels, y=[np.median(epc) for epc in dc_variances.T], color='royalblue')
+
+	axes[0][0].scatter(x=labels, y=pc_accuracy, color='orange')
+	axes[0][1].scatter(x=labels, y=pc_cf_accuracy, color='orange')
+	axes[0][2].scatter(x=labels, y=dc_accuracy, color='orange')
+
+	axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold', color='royalblue')
+	axes[0][0].set_ylim(-0.1, 1.1)
+	axes[0][1].set_ylim(-0.1, 1.1)
+	axes[0][2].set_ylim(-0.1, 1.1)
+	axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold', color='royalblue')
+	axes[1][1].set_ylim(-0.1, 0.5)
+	axes[1][2].set_ylim(-0.1, 0.5)
+	axes[0][0].get_xaxis().set_ticks([])
+	axes[0][1].get_xaxis().set_ticks([])
+	axes[0][2].get_xaxis().set_ticks([])
+	axes[1][0].get_xaxis().set_ticks(labels)
+	axes[1][1].get_xaxis().set_ticks(labels)
+	axes[1][2].get_xaxis().set_ticks(labels)
+
+	axes[0][0].grid(True)
+	axes[0][1].grid(True)
+	axes[0][2].grid(True)
+	axes[1][1].grid(True)
+	axes[1][2].grid(True)
+
+	# ax2 = axes[0][0].secondary_yaxis('right')
+	# ax2.set_ylabel('Classification accuracy', color='royalblue', fontweight='bold')
+	# # ax2.get_yaxis().set_ticks([])
+	# ax3 = axes[0][1].secondary_yaxis('right')
+	# ax3.set_ylabel('Classification accuracy', color='royalblue', fontweight='bold')
+	ax4 = axes[0][2].secondary_yaxis('right')
+	ax4.set_ylabel('Classification accuracy', color='orange', fontweight='bold', fontsize='large')
+
+
+	ax = plt.gca()
+	ax.set_xlabel(' ')
+	fig.text(0.5, 0.03, "rotation (degrees)", ha="center", va="center", fontsize='large')
+	fig.suptitle('Rotating MNIST', fontsize='large', fontweight='bold')
+	plt.savefig('boxplots_rotating_mnist.png')
+	plt.savefig('boxplots_rotating_mnist.pdf')
+	plt.close()
+
+	np.random.seed(32)
+
+	# Enable pgf module
+	matplotlib.use("pgf")
+	matplotlib.rcParams.update(
+		{
+			"pgf.texsystem": "pdflatex",
+			"font.family": "serif",
+			"text.usetex": True,
+			"pgf.rcfonts": False,
+		}
+	)
+
+	# Use SciencePlots  |  pip install SciencePlots
+	plt.style.use(["science", "grid"])
+
+	scale = 1.0
+	num_columns = 1
+	"""Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+	# Compute optimal figure sizes
+	columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+	textwidth = columnwidth_pt / 72  # pt to inch
+	aspect_ratio = (5.0 ** 0.5 - 1.0) / 2.0  # golden ratio
+	aspect_ratio *= num_columns
+	scale = 1.0 / num_columns
+	width = textwidth * scale
+	height = width * aspect_ratio
+
+
+
+	# Open figure
+	fig, axes = plt.subplots(nrows=2, ncols=1, sharex=True, sharey=False,
+							 figsize=(10,5))
+	ax2 = axes[0].twinx()
+
+	# Plot data
+	ax2.plot(labels, pc_accuracy, markersize=6, linestyle='--',
+				 markerfacecolor='royalblue', markeredgecolor='royalblue', marker='X', color='royalblue', linewidth=1.4)
+	ax2.plot(labels, dc_accuracy, markersize=5, linestyle='--',
+				 markerfacecolor='orange', markeredgecolor='black', marker='X', color='orange', linewidth=1.4)
+	axes[0].plot(labels, [np.median(epc) for epc in entropy_pc.T], markersize=6, label='ent_pc',
+				 markerfacecolor='royalblue', markeredgecolor='royalblue', marker='o', color='royalblue', linewidth=1.4)
+	axes[0].plot(labels, [np.median(epc) for epc in entropy_dc.T], markersize=5, label='ent_dc',
+				 markerfacecolor='orange', markeredgecolor='orange', marker='o', color='orange', linewidth=1.4)
+	axes[1].plot(labels, [np.median(epc) for epc in dc_variances.T], markersize=6,
+				 markerfacecolor='orange', markeredgecolor='darkorange', marker='s', color='orange', linewidth=1.4)
+
+	ax2.set_ylim(0, 1)
+
+	# # Adjust legends
+	# legend = plt.legend(labels=labels, fancybox=False, edgecolor="black", loc="best")
+	# legend.get_frame().set_linewidth(0.5)
+
+	# Set labels
+	# plt.xlabel("Rotation (degrees)")
+	#plt.xlim(0, 2.3)
+	#plt.ylim(0, 4)
+	axes[0].set_ylabel('Predictive Entropy (solid)')
+	# axes[0].set_ylim(-0.01, 0.25)
+	#axes[1].set_ylim(0, 0.08)
+	axes[1].set_ylabel('Predictive Uncertainty')
+	axes[1].set_xlabel('MNIST Rotation (degrees)')
+	ax2.set_ylabel('Accuracy (dashed)')
+	ax2.grid(False)
+
+
+	# axes[0][0].get_xaxis().set_ticks([])
+	# axes[0][1].get_xaxis().set_ticks([])
+	# axes[0][2].get_xaxis().set_ticks([])
+	axes[0].get_xaxis().set_ticks(labels)
+	axes[1].get_xaxis().set_ticks(labels)
+	#axes[2].get_xaxis().set_ticks(labels)
+	# axes[1].get_yaxis().set_ticks([])
+	# fig.text(0.5, 0.01, "MNIST Rotation (degrees)", ha="center", va="center", fontsize='large')
+	#axes[0].set_title('Probabilistic Circuits')
+	#axes[1].set_title('Dropout Circuits')
+	#axes[2].set_title('Dropout Circuits')
+
+
+	axes[0].grid(True)
+	axes[1].grid(True)
+	#axes[2].grid(True)
+
+	# set legend
+	handles, _ = axes[0].get_legend_handles_labels()
+	legend_labels = ['PC', 'DC']
+
+	# Add pseudo-handle
+	l = Line2D([0], [0], color="w")
+	handles.insert(2, l)
+	# handles[0].set_color('black')
+	# handles[1].set_color('black')
+
+	# define legend elements from scartch
+	# handles[0] = Line2D([], [], color='black', marker='X', ls='', label='PC')
+	# handles[1] = Line2D([], [], color='black', marker='o', ls='', label='DC')
+	pc_patch = Patch(color='royalblue', label='PC')
+	dc_patch = Patch(color='orange', label='PC')
+	handles[0] = pc_patch
+	handles[1] = dc_patch
+
+	# set the legend markers
+	# handles[0].set_mfc('black')
+	# handles[1].set_mfc('black')
+	# handles[0].set_mec('black')
+	# handles[1].set_mec('black')
+	legend_labels.insert(2, "")
+
+	# Add legend to the figure
+	legend = fig.legend(
+		flip(handles, ncol=3),
+		flip(legend_labels, ncol=3),
+		# alignment="center",
+		fancybox=False,
+		fontsize="small",
+		edgecolor="white",
+		# edgecolor="black",
+		loc="lower center",
+		ncol=3,
+		bbox_to_anchor=(0.5, -0.05),
+		columnspacing=1.0,
+	)
+	# legend.get_frame().set_linewidth(0.5)
+
+	# Save figure
+	name = "figure-3"
+	plt.savefig(name + ".pgf")
+	plt.savefig(name + ".pdf")
+	plt.savefig(name + ".jpg", dpi=300)
+	plt.close()
+
+
+def plot_histograms_rotating_mnist(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances):
+	rotations = [0, 30, 60, 90]
+	pc_confidences_filtered = [pc_confidences['{}'.format(rotation)] for rotation in rotations]
+
+	pc_cf_confidences_filtered = [pc_cf_confidences['{}'.format(rotation)] for rotation in
+								  rotations]
+	dc_confidences_filtered = [dc_confidences['{}'.format(rotation)] for rotation in rotations]
+
+	pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}'.format(rotation)],
+												   np.expand_dims(
+													   np.argmax(pc_cf_confidences['{}'.format(rotation)],
+																 axis=1), axis=1),
+												   axis=1) for rotation in rotations]
+
+	dc_variances_filtered = [np.take_along_axis(dc_variances['{}'.format(rotation)],
+												np.expand_dims(
+													np.argmax(dc_confidences['{}'.format(rotation)],
+															  axis=1), axis=1),
+												axis=1) for rotation in rotations]
+
+	entropy_pc = [
+		entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+		in pc_confidences_filtered]
+	entropy_pc_cf = [entropy(np.exp(cp), axis=1) for cp in pc_cf_confidences_filtered]
+	entropy_dc = [entropy(np.exp(cp), axis=1) for cp in dc_confidences_filtered]
+	# entropy_pc_cf = [
+	# 	entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+	# 	in pc_cf_confidences_filtered]
+	# entropy_dc = [
+	# 	entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+	# 	in dc_confidences_filtered]
+
+	entropy_pc = np.column_stack((entropy_pc))
+	entropy_pc_cf = np.column_stack((entropy_pc_cf))
+	entropy_dc = np.column_stack((entropy_dc))
+	pc_cf_variances = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+	dc_variances = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+	np.random.seed(32)
+
+	# Enable pgf module
+	matplotlib.use("pgf")
+	matplotlib.rcParams.update(
+		{
+			"pgf.texsystem": "pdflatex",
+			"font.family": "serif",
+			"text.usetex": True,
+			"pgf.rcfonts": False,
+		}
+	)
+
+	# Use SciencePlots  |  pip install SciencePlots
+	plt.style.use(["science", "grid"])
+
+	scale = 1.0
+	num_columns = 1
+	"""Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+	# Compute optimal figure sizes
+	columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+	textwidth = columnwidth_pt / 72  # pt to inch
+	aspect_ratio = (5.0 ** 0.5 - 1.0) / 2.0  # golden ratio
+	aspect_ratio *= num_columns
+	scale = 1.0 / num_columns
+	width = textwidth * scale
+	height = width * aspect_ratio
+
+
+	# def entropy(data: np.ndarray) -> np.ndarray:
+	# 	return -1 * np.sum(data * np.log(data), axis=-1)
+
+
+	labels = []
+
+	spn_type = 'PC'
+
+	# Open figure
+	fig = plt.figure(figsize=(width, height))
+
+	# Plot each dataset
+	for cx in range(pc_cf_variances.shape[1]):
+		sns.kdeplot(pc_cf_variances[:, cx], fill=False, cut=1, common_norm=False)
+	# sns.histplot(data_entropy, bins=20, stat="probability", element="bars")
+
+	# Adjust legends
+	legend = plt.legend(labels=labels, fancybox=False, edgecolor="black", loc="best")
+	legend.get_frame().set_linewidth(0.5)
+
+	# Set labels
+	plt.xlabel(f"{spn_type.upper()} Predictive Uncertainty")
+	plt.ylabel("Density")
+	plt.xlim(0, 2.3)
+	plt.ylim(0, 4)
+
+	# Save figure
+	name = "kde_rotating_mnist_pc_std"
+	plt.savefig(name + ".pgf")
+	plt.savefig(name + ".pdf")
+	plt.savefig(name + ".jpg", dpi=300)
+	plt.close()
+
+	spn_type = 'DC'
+
+	# Open figure
+	fig = plt.figure(figsize=(width, height))
+
+	# Plot each dataset
+	for cx in range(dc_variances.shape[1]):
+		sns.kdeplot(dc_variances[:, cx], fill=False, cut=1, common_norm=False)
+	# sns.histplot(data_entropy, bins=20, stat="probability", element="bars")
+
+	# Adjust legends
+	legend = plt.legend(labels=labels, fancybox=False, edgecolor="black", loc="best")
+	legend.get_frame().set_linewidth(0.5)
+
+	# Set labels
+	plt.xlabel(f"{spn_type.upper()} Predictive Uncertainty")
+	plt.ylabel("Density")
+	plt.xlim(0, 2.3)
+	plt.ylim(0, 4)
+
+	# Save figure
+	name = "kde_rotating_mnist_dc_std"
+	plt.savefig(name + ".pgf")
+	plt.savefig(name + ".pdf")
+	plt.savefig(name + ".jpg", dpi=300)
+	plt.close()
+
+
+
+def plot_boxplots_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=3):
+	from imagecorruptions import corrupt, get_corruption_names
+
+	for corruption in get_corruption_names('common'):
+		for cl in range(5):
+			cl += 1
+			key_str = '{}_{}'.format(corruption, cl)
+
+	pc_confidences_filtered = [pc_confidences['{}_{}'.format(corruption, severity)] for corruption in get_corruption_names('common')]
+
+	pc_cf_confidences_filtered = [pc_cf_confidences['{}_{}'.format(corruption, severity)] for corruption in
+								  get_corruption_names('common')]
+
+	dc_confidences_filtered = [dc_confidences['{}_{}'.format(corruption, severity)] for corruption in get_corruption_names('common')]
+
+	pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}_{}'.format(corruption, severity)],
+												   np.expand_dims(
+													   np.argmax(pc_cf_confidences['{}_{}'.format(corruption, severity)],
+																 axis=1), axis=1),
+												   axis=1) for corruption in get_corruption_names('common')]
+
+
+	dc_variances_filtered = [np.take_along_axis(dc_variances['{}_{}'.format(corruption, severity)],
+												np.expand_dims(
+													np.argmax(dc_confidences['{}_{}'.format(corruption, severity)],
+															  axis=1), axis=1),
+												axis=1) for corruption in get_corruption_names('common')]
+
+	entropy_pc = [
+		entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+		in pc_confidences_filtered]
+	entropy_pc_cf = [
+		entropy(np.exp(cp), axis=1) for cp in pc_cf_confidences_filtered]
+	entropy_dc = [
+		entropy(np.exp(cp), axis=1) for cp in dc_confidences_filtered]
+
+	entropy_pc = np.column_stack((entropy_pc))
+	entropy_pc_cf = np.column_stack((entropy_pc_cf))
+	entropy_dc = np.column_stack((entropy_dc))
+	pc_cf_variances = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+	dc_variances = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+	fig, axes = plt.subplots(nrows=2, ncols=3, sharex=False, sharey=False, figsize=(16, 8), tight_layout=True)
+	labels = ['GN', 'SN', 'IN', 'DB', 'GB', 'MB', 'ZB', 'SN', 'FR', 'FO', 'BR', 'CO', 'ET', 'PX', 'JP']
+
+	medianprops = dict(linestyle='-.', linewidth=2, color='green')
+	meanlineprops = dict(linestyle='--', linewidth=1, color='purple')
+	meanpointprops = dict(marker='D', markeredgecolor='black', markerfacecolor='indianred')
+
+	# breakpoint()
+
+	bp1 = axes[0][0].boxplot(entropy_pc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp2 = axes[0][1].boxplot(entropy_pc_cf, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp3 = axes[0][2].boxplot(entropy_dc, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	# axes[0][0].get_xaxis().set_ticks([])
+	# axes[0][1].get_xaxis().set_ticks([])
+	bp4 = axes[1][1].boxplot(pc_cf_variances, medianprops=medianprops, meanprops=meanpointprops, showmeans=True,
+							 meanline=False, labels=labels, showfliers=False, patch_artist=True)
+	bp5 = axes[1][2].boxplot(dc_variances, medianprops=medianprops, meanprops=meanpointprops,
+							 showmeans=True, meanline=False, labels=labels, showfliers=False,
+							 patch_artist=True)
+
+	axes[0][0].set_title('Probabilistic Circuits')
+	axes[0][1].set_title('Probabilistic Circuits + CF')
+	axes[0][2].set_title('Dropout Circuits')
+	#axes[1][1].set_title('Probabilistic Circuits + CF')
+	#axes[1][2].set_title('Dropout Circuits')
+
+
+	plt.setp(bp1['boxes'], facecolor='linen')
+	plt.setp(bp2['boxes'], facecolor='linen')
+	plt.setp(bp3['boxes'], facecolor='linen')
+	plt.setp(bp4['boxes'], facecolor='lightcyan')
+	plt.setp(bp5['boxes'], facecolor='lightcyan')
+
+	axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold')
+	axes[0][0].set_ylim(-0.1, 2.5)
+	axes[0][1].set_ylim(-0.1, 2.5)
+	axes[0][2].set_ylim(-0.1, 2.5)
+	axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold')
+	# axes[3].get_yaxis().set_ticks([])
+	axes[1][1].set_ylim(-0.1, 1.7)
+	axes[1][2].set_ylim(-0.1, 1.7)
+
+	axes[0][0].yaxis.grid(True, linestyle='--')
+	axes[0][1].yaxis.grid(True, linestyle='--')
+	axes[0][2].yaxis.grid(True, linestyle='--')
+	axes[1][1].yaxis.grid(True, linestyle='--')
+	axes[1][2].yaxis.grid(True, linestyle='--')
+
+	ax = plt.gca()
+	ax.set_xlabel(' ')
+	fig.text(0.5, 0.03, "corruption ID (severity {})".format(severity), ha="center", va="center", fontsize='large')
+	fig.suptitle('Corrupted SVHN', fontsize='large', fontweight='bold')
+	plt.savefig('boxplots_svhn_c_{}.png'.format(severity))
+	plt.savefig('boxplots_svhn_c_{}.pdf'.format(severity))
+	plt.close()
+
+
+def plot_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, pc_confs_no_corruption,
+				dc_confs_no_corruption, dc_vars_no_corruption):
+	from imagecorruptions import corrupt, get_corruption_names
+
+	svhn_test_set = datasets.SVHN(root='../data', download=True, split='test', transform=None)
+	svhn_labels = svhn_test_set.labels
+
+
+	dc_confs_no_corruption = np.exp(dc_confs_no_corruption)
+	dc_vars_no_corruption = np.exp(dc_vars_no_corruption)
+	pc_acc_no_corruption = (pc_confs_no_corruption.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size
+	ent_pc_no_corruption = np.median(entropy(pc_confs_no_corruption, axis=1))
+	dc_acc_no_corruption = (dc_confs_no_corruption.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size
+	ent_dc_no_corruption = np.median(entropy(dc_confs_no_corruption, axis=1))
+	dc_vars_no_corruption_filtered = np.take_along_axis(dc_vars_no_corruption, np.expand_dims(
+		np.argmax(dc_confs_no_corruption, axis=1), axis=1), axis=1)
+	dc_vars_no_corruption_filtered = np.sqrt(dc_vars_no_corruption_filtered)
+
+	for corruption in get_corruption_names('common'):
+		ic(corruption)
+		severity_levels = [1, 2, 3, 4, 5]
+
+		pc_confidences_filtered = [pc_confidences['{}_{}'.format(corruption, severity)] for severity in
+								   severity_levels]
+		pc_accuracy = [(cp.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size for cp in
+					   pc_confidences_filtered]
+
+		pc_cf_confidences_filtered = [pc_cf_confidences['{}_{}'.format(corruption, severity)] for severity in
+									  severity_levels]
+		pc_cf_accuracy = [(cp.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size for cp in
+					   pc_cf_confidences_filtered]
+
+		dc_confidences_filtered = [dc_confidences['{}_{}'.format(corruption, severity)] for severity in
+								   severity_levels]
+		dc_accuracy = [(cp.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size for cp in
+						dc_confidences_filtered]
+
+		pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}_{}'.format(corruption, severity)],
+													   np.expand_dims(
+														   np.argmax(
+															   pc_cf_confidences['{}_{}'.format(corruption, severity)],
+															   axis=1), axis=1),
+													   axis=1) for severity in severity_levels]
+
+		dc_variances_filtered = [np.take_along_axis(dc_variances['{}_{}'.format(corruption, severity)],
+													np.expand_dims(
+														np.argmax(dc_confidences['{}_{}'.format(corruption, severity)],
+																  axis=1), axis=1),
+													axis=1) for severity in severity_levels]
+
+		entropy_pc = [
+			entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for cp
+			in pc_confidences_filtered]
+		entropy_pc_cf = [
+			entropy(np.exp(cp), axis=1) for cp in pc_cf_confidences_filtered]
+		entropy_dc = [
+			entropy(np.exp(cp), axis=1) for cp in dc_confidences_filtered]
+
+		entropy_pc = np.column_stack((entropy_pc))
+		entropy_pc_cf = np.column_stack((entropy_pc_cf))
+		entropy_dc = np.column_stack((entropy_dc))
+		pc_cf_vars = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+		dc_vars = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+		fig, axes = plt.subplots(nrows=2, ncols=3, sharex=False, sharey=False, figsize=(16, 8), tight_layout=True)
+
+
+		axes[0][0].scatter(x=severity_levels, y=[np.median(epc) for epc in entropy_pc.T], color='royalblue')
+		axes[0][1].scatter(x=severity_levels, y=[np.median(epc) for epc in entropy_pc_cf.T], color='royalblue')
+		axes[0][2].scatter(x=severity_levels, y=[np.median(epc) for epc in entropy_dc.T], color='royalblue')
+		axes[1][1].scatter(x=severity_levels, y=[np.median(epc) for epc in pc_cf_vars.T], color='royalblue')
+		axes[1][2].scatter(x=severity_levels, y=[np.median(epc) for epc in dc_vars.T], color='royalblue')
+
+		axes[0][0].scatter(x=severity_levels, y=pc_accuracy, color='orange')
+		axes[0][1].scatter(x=severity_levels, y=pc_cf_accuracy, color='orange')
+		axes[0][2].scatter(x=severity_levels, y=dc_accuracy, color='orange')
+
+		axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold', color='royalblue')
+		axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold', color='royalblue')
+		axes[0][0].get_xaxis().set_ticks(severity_levels)
+		axes[0][1].get_xaxis().set_ticks(severity_levels)
+		axes[0][2].get_xaxis().set_ticks(severity_levels)
+		axes[1][0].get_xaxis().set_ticks(severity_levels)
+		axes[1][1].get_xaxis().set_ticks(severity_levels)
+		axes[1][2].get_xaxis().set_ticks(severity_levels)
+		ax4 = axes[0][2].secondary_yaxis('right')
+		ax4.set_ylabel('classification accuracy', color='orange', fontweight='bold', fontsize='large')
+
+		axes[0][0].grid(True)
+		axes[0][1].grid(True)
+		axes[0][2].grid(True)
+		axes[1][1].grid(True)
+		axes[1][2].grid(True)
+
+		axes[0][0].set_title('Probabilistic Circuits')
+		axes[0][1].set_title('Probabilistic Circuits + CF')
+		axes[0][2].set_title('Dropout Circuits')
+		# axes[1][1].set_title('Probabilistic Circuits + CF')
+		# axes[1][2].set_title('Dropout Circuits')
+
+		axes[0][0].set_ylabel('predictive entropy', fontsize='large', fontweight='bold')
+		axes[0][0].set_ylim(-0.1, 2.5)
+		axes[0][1].set_ylim(-0.1, 2.5)
+		axes[0][2].set_ylim(-0.1, 2.5)
+		axes[1][0].set_ylabel('predictive uncertainty (STD)', fontsize='large', fontweight='bold')
+		# axes[3].get_yaxis().set_ticks([])
+		axes[1][1].set_ylim(-0.1, 1.7)
+		axes[1][2].set_ylim(-0.1, 1.7)
+
+
+		ax = plt.gca()
+		ax.set_xlabel(' ')
+		fig.text(0.5, 0.03, "severity level (corruption ID {})".format(corruption), ha="center", va="center", fontsize='large')
+		fig.suptitle('Corrupted SVHN', fontsize='large', fontweight='bold')
+		plt.savefig('plots_svhn_c_{}.png'.format(corruption))
+		plt.savefig('plots_svhn_c_{}.pdf'.format(corruption))
+		plt.close()
+
+		np.random.seed(32)
+
+		# Enable pgf module
+		matplotlib.use("pgf")
+		matplotlib.rcParams.update(
+			{
+				"pgf.texsystem": "pdflatex",
+				"font.family": "serif",
+				"text.usetex": True,
+				"pgf.rcfonts": False,
+			}
+		)
+
+		# Use SciencePlots  |  pip install SciencePlots
+		plt.style.use(["science", "grid"])
+
+		scale = 1.0
+		num_columns = 1
+		"""Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+		# Compute optimal figure sizes
+		columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+		textwidth = columnwidth_pt / 72  # pt to inch
+		aspect_ratio = (5.0 ** 0.5 - 1.0) / 2.0  # golden ratio
+		aspect_ratio *= num_columns
+		scale = 1.0 / num_columns
+		width = textwidth * scale
+		height = width * aspect_ratio
+
+		# def entropy(data: np.ndarray) -> np.ndarray:
+		# 	return -1 * np.sum(data * np.log(data), axis=-1)
+
+		# Open figure
+		fig, axes = plt.subplots(nrows=1, ncols=3, sharex=False, sharey=False, figsize=(15, 5), tight_layout=True)
+
+		# Plot data
+		axes[0].scatter(x=severity_levels, y=[np.median(epc) for epc in entropy_pc.T])
+		axes[1].scatter(x=severity_levels, y=[np.median(epc) for epc in entropy_dc.T])
+		axes[2].scatter(x=severity_levels, y=[np.median(epc) for epc in dc_vars.T])
+
+		# # Adjust legends
+		# legend = plt.legend(labels=labels, fancybox=False, edgecolor="black", loc="best")
+		# legend.get_frame().set_linewidth(0.5)
+
+		# Set labels
+		# plt.xlabel("Rotation (degrees)")
+		plt.xlim(0, 2.3)
+		plt.ylim(0, 4)
+		# motion blur, elastic transform
+		rle = 2
+		llu, rlu = 0.04, 0.07
+		axes[0].set_ylabel('Predictive Entropy', fontsize='large', fontweight='bold')
+		axes[0].set_ylim(-0.01, rle)
+		axes[1].set_ylim(-0.01, rle)
+		axes[2].set_ylim(llu, rlu)
+		axes[2].set_ylabel('Predictive Uncertainty', fontsize='large', fontweight='bold')
+
+		# axes[0][0].get_xaxis().set_ticks([])
+		# axes[0][1].get_xaxis().set_ticks([])
+		# axes[0][2].get_xaxis().set_ticks([])
+		axes[0].get_xaxis().set_ticks(severity_levels)
+		axes[1].get_xaxis().set_ticks(severity_levels)
+		axes[2].get_xaxis().set_ticks(severity_levels)
+		# axes[1].get_yaxis().set_ticks([])
+		fig.text(0.5, 0.01, "Severity Level (Corruption {})".format(corruption.replace("_", " ").title()),
+				 ha="center", va="center", fontsize='large')
+		axes[0].set_title('Probabilistic Circuits')
+		axes[1].set_title('Dropout Circuits')
+		axes[2].set_title('Dropout Circuits')
+
+		axes[0].grid(True)
+		axes[1].grid(True)
+		axes[2].grid(True)
+
+		# Save figure
+		name = "figure-5_{}".format(corruption)
+		plt.savefig(name + ".pgf")
+		plt.savefig(name + ".pdf")
+		plt.savefig(name + ".jpg", dpi=300)
+		plt.close()
+
+		np.random.seed(32)
+
+		# Enable pgf module
+		matplotlib.use("pgf")
+		matplotlib.rcParams.update(
+			{
+				"pgf.texsystem": "pdflatex",
+				"font.family": "serif",
+				"text.usetex": True,
+				"pgf.rcfonts": False,
+			}
+		)
+
+		# Use SciencePlots  |  pip install SciencePlots
+		plt.style.use(["science", "grid"])
+
+		scale = 1.0
+		num_columns = 1
+		"""Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+		# Compute optimal figure sizes
+		columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+		textwidth = columnwidth_pt / 72  # pt to inch
+		aspect_ratio = (5.0 ** 0.5 - 1.0) / 2.0  # golden ratio
+		aspect_ratio *= num_columns
+		scale = 1.0 / num_columns
+		width = textwidth * scale
+		height = width * aspect_ratio
+
+		# Plot data
+		# fig = plt.figure(figsize=(width, height))
+		fig, ax1 = plt.subplots(figsize=(width, height))
+		ax2 = ax1.twinx()
+
+		severity_levels.insert(0, 0)
+		pc_accuracy.insert(0, pc_acc_no_corruption)
+		dc_accuracy.insert(0, dc_acc_no_corruption)
+		ent_pc = [np.median(epc) for epc in entropy_pc.T]
+		ent_pc.insert(0, ent_pc_no_corruption)
+		ent_dc = [np.median(epc) for epc in entropy_dc.T]
+		ent_dc.insert(0, ent_dc_no_corruption)
+
+		# ax2.plot(severity_levels, pc_accuracy, label='PC accuracy', markersize=6, marker='X',
+		# 			markeredgecolor='black', markerfacecolor='orange', color='orange', linewidth=1.4)
+		# ax2.plot(severity_levels, dc_accuracy, label='DC accuracy', markersize=5, marker='o',
+		# 			markeredgecolor='black', markerfacecolor=(1, 0.5, 0, 0.5), color='orange', linewidth=1.4)
+		# ax1.plot(severity_levels, ent_pc, label='PC pred. entropy', markersize=6,
+		# 			markerfacecolor='royalblue', markeredgecolor='royalblue', marker='X', color='royalblue', linewidth=1.4)
+		# ax1.plot(severity_levels, ent_dc, label='DC pred. entropy', markersize=5,
+		# 			markerfacecolor='royalblue', markeredgecolor='royalblue', marker='o', color='royalblue', linewidth=1.4)
+		# labels = ['PC', 'DC']
+		#
+		# ax1.set_ylabel('Predictive Entropy', color='royalblue')
+		# ax2.set_ylabel('Accuracy', color='orange')
+		# ax1.set_xlabel('Severity of {} Corruption)'.format(corruption.replace("_", " ").title()), color='black')
+
+		ax2.plot(severity_levels, pc_accuracy, label='PC accuracy', markersize=6, marker='X', linestyle='--',
+				 markeredgecolor='royalblue', markerfacecolor='royalblue', color='royalblue', linewidth=1.4)
+		ax2.plot(severity_levels, dc_accuracy, label='DC accuracy', markersize=5, marker='X', linestyle='--',
+				 markeredgecolor='black', markerfacecolor='orange', color='orange', linewidth=1.4)
+		ax1.plot(severity_levels, ent_pc, label='PC pred. entropy', markersize=6,
+				 markerfacecolor='royalblue', markeredgecolor='royalblue', marker='o', color='royalblue', linewidth=1.4)
+		ax1.plot(severity_levels, ent_dc, label='DC pred. entropy', markersize=5,
+				 markerfacecolor='orange', markeredgecolor='orange', marker='o', color='orange', linewidth=1.4)
+		labels = ['PC', 'DC']
+
+		ax1.set_ylabel('Predictive Entropy (solid)', color='black')
+		ax2.set_ylabel('Accuracy (dashed)', color='black')
+		ax1.set_xlabel('Severity of {} Corruption'.format(corruption.replace("_", " ").title()), color='black')
+
+		# line_label = Line2D([10], [10], color='black', marker='', ls='--', lw=1.4, axes=ax2)
+		# ax2.add_line(line_label)
+
+		# ax1.grid(False)
+		ax2.grid(False)
+
+		# # Adjust legends
+		# legend = plt.legend(labels=labels, fancybox=False, edgecolor="black", loc="best")
+		# legend.get_frame().set_linewidth(0.5)
+		# leg = plt.legend(bbox_to_anchor=(1, 0), loc="lower right",
+		# 			bbox_transform=fig.transFigure, ncol=3, fancybox=False, edgecolor="black", labels=labels)
+		# leg.get_frame().set_linewidth(0.5)
+
+		# ax = plt.gca()
+		# leg = ax.get_legend()
+		# leg.legendHandles[0].set_color('black')
+		# leg.legendHandles[1].set_color('black')
+
+		handles, _ = ax1.get_legend_handles_labels()
+		# breakpoint()
+
+		# Add pseudo-handle
+		l = Line2D([0], [0], color="w")
+		handles.insert(2, l)
+		# handles[0].set_color('black')
+		# handles[1].set_color('black')
+
+		# define legend elements from scartch
+		# handles[0] = Line2D([], [], color='black', marker='X', ls='', label='PC')
+		# handles[1] = Line2D([], [], color='black', marker='o', ls='', label='DC')
+		pc_patch = Patch(color='royalblue', label='PC')
+		dc_patch = Patch(color='orange', label='PC')
+		handles[0] = pc_patch
+		handles[1] = dc_patch
+
+
+		# set the legend markers
+		# handles[0].set_mfc('black')
+		# handles[1].set_mfc('black')
+		# handles[0].set_mec('black')
+		# handles[1].set_mec('black')
+		labels.insert(2, "")
+
+		# Add legend to the figure
+		legend = fig.legend(
+			flip(handles, ncol=3),
+			flip(labels, ncol=3),
+			# alignment="center",
+			fancybox=False,
+			fontsize="xx-small",
+			edgecolor="white",
+			# edgecolor="black",
+			loc="lower center",
+			ncol=3,
+			bbox_to_anchor=(0.55, -0.175),
+			columnspacing=1.0,
+		)
+		legend.get_frame().set_linewidth(0.5)
+
+		# Set labels
+		# plt.xlabel("Rotation (degrees)")
+		# plt.xlim(0, 1)
+		plt.ylim(0, 1)
+		# motion blur, elastic transform
+
+		# plt.grid(True)
+
+		# Save figure
+		name = "figure-6_svhn_{}".format(corruption)
+		plt.savefig(name + ".pgf")
+		plt.savefig(name + ".pdf")
+		plt.savefig(name + ".jpg", dpi=300)
+		plt.close()
+
+		# plot uncertainty
+		fig, ax1 = plt.subplots(figsize=(width, height))
+		dc_vars_complete = [np.median(epc) for epc in dc_vars.T]
+		dc_vars_complete.insert(0, np.median(dc_vars_no_corruption))
+
+		ax1.plot(severity_levels, dc_vars_complete, label='DC pred. uncertainty', markersize=6,
+				 markerfacecolor='orange', markeredgecolor='darkorange', marker='s', color='orange', linewidth=1.4)
+		labels = ['DC']
+
+		ax1.set_ylabel('Predictive Uncertainty', color='black')
+		ax1.set_xlabel('Severity of {} Corruption'.format(corruption.replace("_", " ").title()), color='black')
+
+		handles, _ = ax1.get_legend_handles_labels()
+
+		# Add pseudo-handle
+		l = Line2D([0], [0], color="w")
+		handles.insert(2, l)
+
+		labels.insert(2, "")
+
+		# Add legend to the figure
+		legend = fig.legend(
+			flip(handles, ncol=3),
+			flip(labels, ncol=3),
+			# alignment="center",
+			fancybox=False,
+			fontsize="xx-small",
+			edgecolor="white",
+			# edgecolor="black",
+			loc="lower center",
+			ncol=3,
+			bbox_to_anchor=(0.55, -0.175),
+			columnspacing=1.0,
+		)
+		legend.get_frame().set_linewidth(0.5)
+
+		# Save figure
+		name = "figure-7_svhn_{}".format(corruption)
+		plt.savefig(name + ".pgf")
+		plt.savefig(name + ".pdf")
+		plt.savefig(name + ".jpg", dpi=300)
+		plt.close()
+
+
+def plot_svhn_c_selected(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances,
+				pc_confs_no_corruption, dc_confs_no_corruption, dc_vars_no_corruption, selected=None):
+	from imagecorruptions import corrupt, get_corruption_names
+
+	svhn_test_set = datasets.SVHN(root='../data', download=True, split='test', transform=None)
+	svhn_labels = svhn_test_set.labels
+
+	dc_confs_no_corruption = np.exp(dc_confs_no_corruption)
+	dc_vars_no_corruption = np.exp(dc_vars_no_corruption)
+	pc_acc_no_corruption = (pc_confs_no_corruption.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size
+	ent_pc_no_corruption = np.median(entropy(pc_confs_no_corruption, axis=1))
+	dc_acc_no_corruption = (dc_confs_no_corruption.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size
+	ent_dc_no_corruption = np.median(entropy(dc_confs_no_corruption, axis=1))
+	dc_vars_no_corruption_filtered = np.take_along_axis(dc_vars_no_corruption, np.expand_dims(
+		np.argmax(dc_confs_no_corruption, axis=1), axis=1), axis=1)
+	dc_vars_no_corruption_filtered = np.sqrt(dc_vars_no_corruption_filtered)
+
+	np.random.seed(32)
+
+	# Enable pgf module
+	matplotlib.use("pgf")
+	matplotlib.rcParams.update(
+		{
+			"pgf.texsystem": "pdflatex",
+			"font.family": "serif",
+			"text.usetex": True,
+			"pgf.rcfonts": False,
+		}
+	)
+
+	# Use SciencePlots  |  pip install SciencePlots
+	plt.style.use(["science", "grid"])
+
+	fig, axes = plt.subplots(nrows=2, ncols=len(selected), sharex=False, sharey=False, figsize=(24, 7), tight_layout=True)
+
+	for idx, corruption in enumerate(selected):
+		ic(corruption)
+		severity_levels = [1, 2, 3, 4, 5]
+
+		pc_confidences_filtered = [pc_confidences['{}_{}'.format(corruption, severity)] for severity in
+								   severity_levels]
+		pc_accuracy = [(cp.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size for cp in
+					   pc_confidences_filtered]
+
+		pc_cf_confidences_filtered = [pc_cf_confidences['{}_{}'.format(corruption, severity)] for severity in
+									  severity_levels]
+		pc_cf_accuracy = [(cp.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size for cp in
+						  pc_cf_confidences_filtered]
+
+		dc_confidences_filtered = [dc_confidences['{}_{}'.format(corruption, severity)] for severity in
+								   severity_levels]
+		dc_accuracy = [(cp.argmax(axis=1) == svhn_labels).sum() / svhn_labels.size for cp in
+					   dc_confidences_filtered]
+
+		pc_cf_variances_filtered = [np.take_along_axis(pc_cf_variances['{}_{}'.format(corruption, severity)],
+													   np.expand_dims(
+														   np.argmax(
+															   pc_cf_confidences['{}_{}'.format(corruption, severity)],
+															   axis=1), axis=1),
+													   axis=1) for severity in severity_levels]
+
+		dc_variances_filtered = [np.take_along_axis(dc_variances['{}_{}'.format(corruption, severity)],
+													np.expand_dims(
+														np.argmax(dc_confidences['{}_{}'.format(corruption, severity)],
+																  axis=1), axis=1),
+													axis=1) for severity in severity_levels]
+
+		entropy_pc = [
+			entropy(np.exp(cp - np.repeat(scipy.special.logsumexp(cp, axis=1).reshape(-1, 1), 10, axis=1)), axis=1) for
+			cp
+			in pc_confidences_filtered]
+		entropy_pc_cf = [
+			entropy(np.exp(cp), axis=1) for cp in pc_cf_confidences_filtered]
+		entropy_dc = [
+			entropy(np.exp(cp), axis=1) for cp in dc_confidences_filtered]
+
+		entropy_pc = np.column_stack((entropy_pc))
+		entropy_pc_cf = np.column_stack((entropy_pc_cf))
+		entropy_dc = np.column_stack((entropy_dc))
+		pc_cf_vars = np.sqrt(np.exp(np.column_stack((pc_cf_variances_filtered))))
+		dc_vars = np.sqrt(np.exp(np.column_stack((dc_variances_filtered))))
+
+		severity_levels.insert(0, 0)
+		pc_accuracy.insert(0, pc_acc_no_corruption)
+		dc_accuracy.insert(0, dc_acc_no_corruption)
+		ent_pc = [np.median(epc) for epc in entropy_pc.T]
+		ent_pc.insert(0, ent_pc_no_corruption)
+		ent_dc = [np.median(epc) for epc in entropy_dc.T]
+		ent_dc.insert(0, ent_dc_no_corruption)
+
+		ax2 = axes[0][idx].twinx()
+		ax2.grid(False)
+		# axes[0][idx].grid(True)
+		ax2.set_ylim(0.0, 1.0)
+		axes[0][idx].set_ylim(-0.1, 2.1)
+		axes[1][idx].set_ylim(-0.005, 0.07)
+		axes[0][idx].set_xticks(severity_levels, [])
+		axes[1][idx].set_xticks(severity_levels, severity_levels)
+
+		if idx != 0 and idx != len(selected_corruptions)-1:
+			axes[0][idx].set_yticklabels([])
+			axes[1][idx].set_yticklabels([])
+			ax2.set_yticklabels([])
+		if idx == len(selected_corruptions)-1:
+			axes[0][idx].set_yticklabels([])
+			axes[1][idx].set_yticklabels([])
+		if idx == 0:
+			ax2.set_yticklabels([])
+
+
+		ax2.plot(severity_levels, pc_accuracy, label='PC accuracy', markersize=6, marker='X', linestyle='--',
+				 markeredgecolor='royalblue', markerfacecolor='royalblue', color='royalblue', linewidth=1.4)
+		ax2.plot(severity_levels, dc_accuracy, label='DC accuracy', markersize=5, marker='X', linestyle='--',
+				 markeredgecolor='black', markerfacecolor='orange', color='orange', linewidth=1.4)
+		axes[0][idx].plot(severity_levels, ent_pc, label='PC pred. entropy', markersize=6,
+				 markerfacecolor='royalblue', markeredgecolor='royalblue', marker='o', color='royalblue', linewidth=1.4)
+		axes[0][idx].plot(severity_levels, ent_dc, label='DC pred. entropy', markersize=5,
+				 markerfacecolor='orange', markeredgecolor='orange', marker='o', color='orange', linewidth=1.4)
+
+		dc_vars_complete = [np.median(epc) for epc in dc_vars.T]
+		dc_vars_complete.insert(0, np.median(dc_vars_no_corruption))
+
+		axes[1][idx].plot(severity_levels, dc_vars_complete, label='DC pred. uncertainty', markersize=6,
+				 markerfacecolor='orange', markeredgecolor='darkorange', marker='s', color='orange', linewidth=1.4)
+
+		axes[0][idx].set_title("{}".format(corruption.replace("_", " ").title()), color='black', fontweight='bold', fontsize='large')
+
+		if idx == len(selected)-1:
+			ax2.set_ylabel('Accuracy (dashed)', color='black', fontweight='bold', fontsize='large')
+
+		axes[0][idx].tick_params(axis='x', which='major', direction='inout', length=8)
+		axes[1][idx].tick_params(axis='x', which='major', direction='inout', length=8)
+
+	# plt.xlabel('Corruption Severity', fontweight='bold', fontsize='large')
+	fig.text(0.5, 0.00, "Corruption Severity", ha="center", va="center", fontsize='x-large', fontweight='bold')
+	labels = ['PC', 'DC']
+
+	handles, _ = plt.gca().get_legend_handles_labels()
+
+	# Add pseudo-handle
+	l = Line2D([0], [0], color="w")
+	handles.insert(2, l)
+	# handles[0].set_color('black')
+	# handles[1].set_color('black')
+
+	# define legend elements from scartch
+	# handles[0] = Line2D([], [], color='black', marker='X', ls='', label='PC')
+	# handles[1] = Line2D([], [], color='black', marker='o', ls='', label='DC')
+	pc_patch = Patch(color='royalblue', label='PC')
+	dc_patch = Patch(color='orange', label='PC')
+	handles[0] = pc_patch
+	handles[1] = dc_patch
+
+	# set the legend markers
+	# handles[0].set_mfc('black')
+	# handles[1].set_mfc('black')
+	# handles[0].set_mec('black')
+	# handles[1].set_mec('black')
+	labels.insert(2, "")
+
+	# Add legend to the figure
+	legend = fig.legend(
+		flip(handles, ncol=3),
+		flip(labels, ncol=3),
+		# alignment="center",
+		fancybox=False,
+		fontsize="xx-large",
+		edgecolor="white",
+		# edgecolor="black",
+		loc="lower center",
+		ncol=3,
+		bbox_to_anchor=(0.5, -0.1),
+		columnspacing=1.0,
+	)
+	legend.get_frame().set_linewidth(0.5)
+
+
+	axes[0][0].set_ylabel('Predictive Entropy (solid)', color='black', fontweight='bold', fontsize='large')
+	axes[1][0].set_ylabel('Predictive Uncertainty (solid)', color='black', fontweight='bold', fontsize='large')
+	#axes[0][len(selected)-1].set_ylabel('Accuracy (dashed)', color='black')
+	# axes.set_xlabel('Severity of {} Corruption'.format(corruption.replace("_", " ").title()), color='black')
+
+	# Save figure
+	name = "figure-5_svhn_c_selected"
+	plt.savefig(name + ".pgf")
+	plt.savefig(name + ".pdf")
+	plt.savefig(name + ".jpg", dpi=300)
+	plt.close()
+
+def gather_rotating_mnist_data(pc_dir = '', dc_dir = '', dropout_learning=None, dropout_inference=None, lmbda=None):
+	rotations = [i for i in range(0, 95, 5)]
+	# files have _rotation at the end
+
+	pc_d = pc_dir
+	dc_d = dc_dir
+
+	pc_confidences = {}
+	dc_confidences = {}
+	dc_variances = {}
+
+	pc_cf_confidences = {}
+	pc_cf_variances = {}
+
+	fold = 'test'
+	training_dataset = 'mnist'
+
+	for rotation in rotations:
+		key_str = '{}'.format(rotation)
+
+		pc_confidences[key_str] = np.load(pc_d + 'output_{}_{}_{}_{}_{}_{}.npy'.format(
+			training_dataset, fold, lmbda, 0.0, 0.0, rotation))
+		# np.save('rotating_mnist/pc_{}'.format(rotation), pc_confidences[key_str])
+		pc_cf_confidences[key_str] = np.load(pc_d + 'output_{}_{}_{}_{}_{}_{}.npy'.format(
+			training_dataset, fold, lmbda, 0.0, dropout_inference, rotation))
+		pc_cf_variances[key_str] = np.load(pc_d + 'var_{}_{}_{}_{}_{}_{}.npy'.format(
+			training_dataset, fold, lmbda, 0.0, dropout_inference, rotation))
+		dc_confidences[key_str] = np.load(dc_d + 'output_{}_{}_{}_{}_{}_{}.npy'.format(
+			training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation))
+		# np.save('rotating_mnist/dc_{}'.format(rotation), dc_confidences[key_str])
+		dc_variances[key_str] = np.load(dc_d + 'var_{}_{}_{}_{}_{}_{}.npy'.format(
+			training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation))
+		# np.save('rotating_mnist/dc_vars_{}'.format(rotation), dc_variances[key_str])
+
+	return pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances
+
+def gather_svhn_c_data(pc_dir = '', pc_cf_dir='', dc_dir = '', dropout_learning=None, dropout_inference=None, lmbda=None):
+	from imagecorruptions import corrupt, get_corruption_names
+	fold = 'test'
+	training_dataset = 'svhn'
+
+	print(len(get_corruption_names('common')))
+	sys.exit()
+
+	pc_d = pc_dir
+	pc_cf_d = pc_cf_dir
+	dc_d = dc_dir
+
+	pc_confidences = {}
+	dc_confidences = {}
+	dc_variances = {}
+
+	pc_cf_confidences = {}
+	pc_cf_variances = {}
+
+	for corruption in get_corruption_names('common'):
+		for cl in range(5):
+			cl += 1
+			key_str = '{}_{}'.format(corruption, cl)
+			pc_confidences[key_str] = np.load(pc_d + 'output_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, 0.0, 0.0, corruption, cl))
+			np.save('svhn_corruptions/pc_{}_{}'.format(corruption, cl), pc_confidences[key_str])
+			pc_cf_confidences[key_str] = np.load(pc_cf_d + 'output_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, 0.0, dropout_inference, corruption, cl))
+			pc_cf_variances[key_str] = np.load(pc_cf_d + 'var_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, 0.0, dropout_inference, corruption, cl))
+			dc_confidences[key_str] = np.load(dc_d + 'output_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl))
+			np.save('svhn_corruptions/dc_{}_{}'.format(corruption, cl), dc_confidences[key_str])
+			dc_variances[key_str] = np.load(dc_d + 'var_{}_{}_{}_{}_{}_{}_{}.npy'.format(
+				training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl))
+			np.save('svhn_corruptions/dc_vars_{}_{}'.format(corruption, cl), dc_variances[key_str])
+
+	pc_confs_no_corruption = np.load('results/2022-09-25_19-24-15/results/class_probs_in_domain_test.npy')
+	dc_confs_no_corruption = np.load('results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_test_1.0_0.1_0.1_None_False.npy')
+	dc_vars_no_corruption = np.load('results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_svhn_test_1.0_0.1_0.1_None_False.npy')
+
+	np.save('svhn_corruptions/pc_no_corr', pc_confs_no_corruption)
+	np.save('svhn_corruptions/dc_no_corr', dc_confs_no_corruption)
+	np.save('svhn_corruptions/dc_vars_no_corr', dc_vars_no_corruption)
+
+	return pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, pc_confs_no_corruption,\
+		   dc_confs_no_corruption, dc_vars_no_corruption
+
+
+def fig1_pc_cf(spn_type, legend=False, ll_correction=False):
+	# load results got from a PC trained w/o dropout (during learning)
+	pc_in_domain_train = np.load('results/2022-09-25_19-24-15/results/class_probs_in_domain_train.npy')
+	pc_in_domain_test = np.load('results/2022-09-25_19-24-15/results/class_probs_in_domain_test.npy')
+	pc_ood_test = np.load('results/2022-09-25_19-24-15/results/class_probs_ood_test.npy')
+	pc_ood_test_2 = np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cifar100_test_1.0_0.0_0.0_None.npy')
+	pc_ood_test_3 = np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cinic_test_1.0_0.0_0.0_None.npy')
+	pc_ood_test_4 = np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_lsun_test_1.0_0.0_0.0_None.npy')
+
+	pc_ood_test_2 = np.exp(pc_ood_test_2 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_2, axis=1).reshape(-1, 1), 10, axis=1))
+	pc_ood_test_3 = np.exp(pc_ood_test_3 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_3, axis=1).reshape(-1, 1), 10, axis=1))
+	pc_ood_test_4 = np.exp(pc_ood_test_4 - np.repeat(
+		scipy.special.logsumexp(pc_ood_test_4, axis=1).reshape(-1, 1), 10, axis=1))
+
+	# load results for CF dropout on a PC trained w/o dropout (during learning)
+	pc_cf_in_domain_train = np.exp(np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_svhn_train_1.0_0.0_0.1_None.npy'))
+	pc_cf_in_domain_test = np.exp(np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_svhn_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test = np.exp(np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cifar_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_2 = np.exp(np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cifar100_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_3 = np.exp(np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_cinic_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_4 = np.exp(np.load(
+		'results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/output_lsun_test_1.0_0.0_0.1_None.npy'))
+
+
+	pc_cf_in_domain_train_vars = np.exp(
+		np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_svhn_train_1.0_0.0_0.1_None.npy'))
+	pc_cf_in_domain_test_vars = np.exp(
+		np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_svhn_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_vars = np.exp(
+		np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_cifar_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_vars_2 = np.exp(
+		np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_cifar100_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_vars_3 = np.exp(
+		np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_cinic_test_1.0_0.0_0.1_None.npy'))
+	pc_cf_ood_test_vars_4 = np.exp(
+		np.load('results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/var_lsun_test_1.0_0.0_0.1_None.npy'))
+
+	pc_cf_pred_uncert_in_train = np.take_along_axis(pc_cf_in_domain_train_vars,
+													np.expand_dims(np.argmax(pc_cf_in_domain_train, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_in_test = np.take_along_axis(pc_cf_in_domain_test_vars,
+												   np.expand_dims(np.argmax(pc_cf_in_domain_test, axis=1), axis=1),
+												   axis=1).flatten()
+	pc_cf_pred_uncert_ood_test = np.take_along_axis(pc_cf_ood_test_vars,
+													np.expand_dims(np.argmax(pc_cf_ood_test, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_ood_test_2 = np.take_along_axis(pc_cf_ood_test_vars_2,
+													np.expand_dims(np.argmax(pc_cf_ood_test_2, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_ood_test_3 = np.take_along_axis(pc_cf_ood_test_vars_3,
+													np.expand_dims(np.argmax(pc_cf_ood_test_3, axis=1), axis=1),
+													axis=1).flatten()
+	pc_cf_pred_uncert_ood_test_4 = np.take_along_axis(pc_cf_ood_test_vars_4,
+													  np.expand_dims(np.argmax(pc_cf_ood_test_4, axis=1), axis=1),
+													  axis=1).flatten()
+
+	# load results form a DC (trained with dropout)
+	dc_in_domain_train = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_train_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_in_domain_test = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_ood_test = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar_test_1.0_0.1_0.1_None.npy'
+	))
+	dc_ood_test_2 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar100_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_ood_test_3 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cinic_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_ood_test_4 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_lsun_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+
+
+	dc_in_domain_train_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_svhn_train_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_in_domain_test_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_svhn_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_ood_test_vars = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar_test_1.0_0.1_0.1_None.npy'
+	))
+	dc_ood_test_vars_2 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_cifar100_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_ood_test_vars_3 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_cinic_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+	dc_ood_test_vars_4 = np.exp(np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/var_lsun_test_1.0_0.1_0.1_None_{}.npy'.format(ll_correction)
+	))
+
+	pred_uncert_in_train = np.take_along_axis(dc_in_domain_train_vars,
+											  np.expand_dims(np.argmax(dc_in_domain_train, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_in_test = np.take_along_axis(dc_in_domain_test_vars,
+											 np.expand_dims(np.argmax(dc_in_domain_test, axis=1), axis=1),
+											 axis=1).flatten()
+	pred_uncert_ood_test = np.take_along_axis(dc_ood_test_vars,
+											  np.expand_dims(np.argmax(dc_ood_test, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_ood_test_2 = np.take_along_axis(dc_ood_test_vars_2,
+											  np.expand_dims(np.argmax(dc_ood_test_2, axis=1), axis=1),
+											  axis=1).flatten()
+	pred_uncert_ood_test_3 = np.take_along_axis(dc_ood_test_vars_3,
+												np.expand_dims(np.argmax(dc_ood_test_3, axis=1), axis=1),
+												axis=1).flatten()
+	pred_uncert_ood_test_4 = np.take_along_axis(dc_ood_test_vars_4,
+												np.expand_dims(np.argmax(dc_ood_test_4, axis=1), axis=1),
+												axis=1).flatten()
+
+	dc0_in_domain_train = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_train_1.0_0.1_0.0_None.npy'
+	)
+	dc0_in_domain_test = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_svhn_test_1.0_0.1_0.0_None.npy'
+	)
+	dc0_ood_test = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar_test_1.0_0.1_0.0_None.npy'
+	)
+	dc0_ood_test_2 = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cifar100_test_1.0_0.1_0.0_None.npy'
+	)
+	dc0_ood_test_3 = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_cinic_test_1.0_0.1_0.0_None.npy'
+	)
+	dc0_ood_test_4 = np.load(
+		'results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/output_lsun_test_1.0_0.1_0.0_None.npy'
+	)
+
+	dc0_in_domain_train = np.exp(dc0_in_domain_train - np.repeat(
+		scipy.special.logsumexp(dc0_in_domain_train, axis=1).reshape(-1, 1), 10, axis=1))
+	dc0_in_domain_test = np.exp(dc0_in_domain_test - np.repeat(
+		scipy.special.logsumexp(dc0_in_domain_test, axis=1).reshape(-1, 1), 10, axis=1))
+	dc0_ood_test = np.exp(dc0_ood_test - np.repeat(
+		scipy.special.logsumexp(dc0_ood_test, axis=1).reshape(-1, 1), 10, axis=1))
+	dc0_ood_test_2 = np.exp(dc0_ood_test_2 - np.repeat(
+		scipy.special.logsumexp(dc0_ood_test_2, axis=1).reshape(-1, 1), 10, axis=1))
+	dc0_ood_test_3 = np.exp(dc0_ood_test_3 - np.repeat(
+		scipy.special.logsumexp(dc0_ood_test_3, axis=1).reshape(-1, 1), 10, axis=1))
+	dc0_ood_test_4 = np.exp(dc0_ood_test_4 - np.repeat(
+		scipy.special.logsumexp(dc0_ood_test_4, axis=1).reshape(-1, 1), 10, axis=1))
+
+
+	dc_in_domain_train = entropy(dc_in_domain_train, axis=1)
+	dc_in_domain_test = entropy(dc_in_domain_test, axis=1)
+	dc_ood_test = entropy(dc_ood_test, axis=1)
+	dc_ood_test_2 = entropy(dc_ood_test_2, axis=1)
+	dc_ood_test_3 = entropy(dc_ood_test_3, axis=1)
+	dc_ood_test_4 = entropy(dc_ood_test_4, axis=1)
+
+	pc_in_domain_train = entropy(pc_in_domain_train, axis=1)
+	pc_in_domain_test = entropy(pc_in_domain_test, axis=1)
+	pc_ood_test = entropy(pc_ood_test, axis=1)
+	pc_ood_test_2 = entropy(pc_ood_test_2, axis=1)
+	pc_ood_test_3 = entropy(pc_ood_test_3, axis=1)
+	pc_ood_test_4 = entropy(pc_ood_test_4, axis=1)
+
+	pc_cf_in_domain_train = entropy(pc_cf_in_domain_train, axis=1)
+	pc_cf_in_domain_test = entropy(pc_cf_in_domain_test, axis=1)
+	pc_cf_ood_test = entropy(pc_cf_ood_test, axis=1)
+	pc_cf_ood_test_2 = entropy(pc_cf_ood_test_2, axis=1)
+	pc_cf_ood_test_3 = entropy(pc_cf_ood_test_3, axis=1)
+	pc_cf_ood_test_4 = entropy(pc_cf_ood_test_4, axis=1)
+
+	dc0_in_domain_train = entropy(dc0_in_domain_train, axis=1)
+	dc0_in_domain_test = entropy(dc0_in_domain_test, axis=1)
+	dc0_ood_test = entropy(dc0_ood_test, axis=1)
+	dc0_ood_test_2 = entropy(dc0_ood_test_2, axis=1)
+	dc0_ood_test_3 = entropy(dc0_ood_test_3, axis=1)
+	dc0_ood_test_4 = entropy(dc0_ood_test_4, axis=1)
+
+	pred_uncert_in_train = np.sqrt(pred_uncert_in_train)
+	pred_uncert_in_test = np.sqrt(pred_uncert_in_test)
+	pred_uncert_ood_test = np.sqrt(pred_uncert_ood_test)
+	pred_uncert_ood_test_2 = np.sqrt(pred_uncert_ood_test_2)
+	pred_uncert_ood_test_3 = np.sqrt(pred_uncert_ood_test_3)
+	pred_uncert_ood_test_4 = np.sqrt(pred_uncert_ood_test_4)
+
+
+	pc_cf_pred_uncert_in_train = np.sqrt(pc_cf_pred_uncert_in_train)
+	pc_cf_pred_uncert_in_test = np.sqrt(pc_cf_pred_uncert_in_test)
+	pc_cf_pred_uncert_ood_test = np.sqrt(pc_cf_pred_uncert_ood_test)
+	pc_cf_pred_uncert_ood_test_2 = np.sqrt(pc_cf_pred_uncert_ood_test_2)
+	pc_cf_pred_uncert_ood_test_3 = np.sqrt(pc_cf_pred_uncert_ood_test_3)
+	pc_cf_pred_uncert_ood_test_4 = np.sqrt(pc_cf_pred_uncert_ood_test_4)
+
+	np.random.seed(32)
+
+	# Enable pgf module
+	matplotlib.use("pgf")
+	matplotlib.rcParams.update(
+		{
+			"pgf.texsystem": "pdflatex",
+			"font.family": "serif",
+			"text.usetex": True,
+			"pgf.rcfonts": False,
+		}
+	)
+
+	# Use SciencePlots  |  pip install SciencePlots
+	plt.style.use(["science", "grid"])
+
+	scale = 1.0
+	num_columns = 1
+	"""Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+	# Compute optimal figure sizes
+	columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+	textwidth = columnwidth_pt / 72  # pt to inch
+	aspect_ratio = (5.0 ** 0.5 - 1.0) / 2.0  # golden ratio
+	aspect_ratio *= num_columns
+	scale = 1.0 / num_columns
+	width = textwidth * scale
+	height = width * aspect_ratio
+
+
+	# def entropy(data: np.ndarray) -> np.ndarray:
+	# 	return -1 * np.sum(data * np.log(data), axis=-1)
+
+
+	labels = [
+		"SVHN Train, ID",
+		"SVHN Test, ID",
+		# "OOD (CIFAR10 test)",
+		"CIFAR100 Test, OOD",
+		"CINIC Test, OOD",
+		"LSUN Test, OOD",
+	]
+
+	if spn_type == 'PC_CF':
+		data_ary = [pc_cf_in_domain_train, pc_cf_in_domain_test, pc_cf_ood_test_2, pc_cf_ood_test_3, pc_cf_ood_test_4]
+	elif spn_type == 'PC':
+		data_ary = [pc_in_domain_train, pc_in_domain_test, pc_ood_test_2, pc_ood_test_3, pc_ood_test_4]
+	elif spn_type == 'DC':
+		data_ary = [dc_in_domain_train, dc_in_domain_test, dc_ood_test_2, dc_ood_test_3, dc_ood_test_4]
+	elif spn_type == 'DC_STD':
+		data_ary = [pred_uncert_in_train, pred_uncert_in_test, pred_uncert_ood_test_2, pred_uncert_ood_test_3,
+					pred_uncert_ood_test_4]
+	elif spn_type == 'PC_CF_STD':
+		data_ary = [pc_cf_pred_uncert_in_train, pc_cf_pred_uncert_in_test, pc_cf_pred_uncert_ood_test_2,
+					pc_cf_pred_uncert_ood_test_3, pc_cf_pred_uncert_ood_test_4]
+	elif spn_type == 'DC_0':
+		data_ary = [dc0_in_domain_train, dc0_in_domain_test, dc0_ood_test_2, dc0_ood_test_3,
+					dc0_ood_test_4]
+
+	# Open figure
+	fig = plt.figure(figsize=(width, height))
+
+	# Plot each dataset
+	idx = 0
+	for data in data_ary:
+		sns.kdeplot(data, fill=True, cut=1, common_norm=False, label=labels[idx])
+		idx += 1
+	# sns.histplot(data_entropy, bins=20, stat="probability", element="bars")
+
+	# Adjust legends
+	# if legend:
+	# 	legend = plt.legend(labels=labels, fancybox=False, edgecolor="black", loc="best")
+	# 	legend.get_frame().set_linewidth(0.5)
+
+	ax = plt.gca()
+	handles, _ = ax.get_legend_handles_labels()
+	# breakpoint()
+
+	# Add pseudo-handle
+	l = Line2D([0], [0], color="w")
+	handles.insert(2, l)
+	labels.insert(2, "")
+
+	# Add legend to the figure
+	legend = fig.legend(
+		flip(handles, ncol=3),
+		flip(labels, ncol=3),
+		# alignment="center",
+		fancybox=False,
+		fontsize="xx-small",
+		edgecolor="white",
+		# edgecolor="black",
+		loc="lower center",
+		ncol=3,
+		bbox_to_anchor=(0.55, -0.300),
+		columnspacing=1.0,
+	)
+	legend.get_frame().set_linewidth(0.5)
+
+	# Set labels
+	model_acronym = 'PC' if 'PC' in spn_type else 'DC'
+	if 'STD' in spn_type:
+		# plt.xlabel(f"{spn_type.upper()} Predictive Uncertainty")
+		plt.xlabel("{} Predictive Uncertainty".format(model_acronym))
+	else:
+		plt.xlabel(f"{spn_type.upper()} Predictive Entropy")
+	plt.ylabel("Density")
+	rl = 0.2 if 'STD' in spn_type else 2.5
+	plt.xlim(0, rl)
+	plt.ylim(0, 20)
+
+	# Save figure
+	name = "figure-1_{}".format(spn_type)
+	ll_corr_str = '_ll_corr' if ll_correction else ''
+	plt.savefig(name + ll_corr_str + ".pgf")
+	plt.savefig(name + ll_corr_str + ".pdf")
+	plt.savefig(name + ll_corr_str + ".jpg", dpi=300)
+
+
+"""
+Data directories for MNIST-C results:
+MNIST lambda = 1.0 
+PC:
+results/2022-09-26_19-58-52/model/post_hoc_results/closed_form/
+DC (dropout learning 0.2, inference 0.2):
+results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/
+
+SVHN lambda = 1.0
+PC:
+results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/svhn_c/cf_p_00/
+
+PC+CF
+results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/svhn_c/cf_p_01/
+
+DC (dropout learning 0.1, inference 0.1):
+results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/svhn_c/cf_p_01/
+
+"""
 
 if __name__ == "__main__":
+	# fig1_pc_cf('PC_CF', legend=False)
+	# fig1_pc_cf('PC', legend=False)
+	# fig1_pc_cf('DC', legend=False, ll_correction=False)
+	#fig1_pc_cf('DC', legend=False, ll_correction=True)
+	# fig1_pc_cf('DC_STD', legend=False, ll_correction=False)
+	# fig1_pc_cf('DC_STD', legend=False, ll_correction=True)
+	# fig1_pc_cf('PC_CF_STD', legend=False)
+	# fig1_pc_cf('DC_0', legend=False)
+	# gen_figure1_svhn_generative(kde=True)
+
+	# pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances =\
+	# 	gather_mnist_c_data(pc_dir='results/2022-09-26_19-58-52/model/post_hoc_results/closed_form/',
+	# 						dc_dir='results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/',
+	# 						dropout_learning=0.2, dropout_inference=0.2, lmbda=1.0)
+	# plot_boxplots_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=1)
+	# plot_boxplots_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=2)
+	# plot_boxplots_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=3)
+	# plot_boxplots_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=4)
+	# plot_boxplots_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=5)
+	# plot_histograms_mnist_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances)
+
+	# pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances = \
+	# gather_rotating_mnist_data(pc_dir='results/2022-09-26_19-58-52/model/post_hoc_results/closed_form/',
+	# 							dc_dir='results/2022-09-16_21-08-27/model/post_hoc_results/closed_form/',
+	# 							dropout_learning=0.2, dropout_inference=0.2, lmbda=1.0)
+	# plot_boxplots_rotating_mnist(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances)
+	# plot_histograms_rotating_mnist(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances)
+
+	# selected_corruptions = ['brightness', 'elastic_transform', 'frost', 'gaussian_noise', 'impulse_noise', 'shot_noise']
+	pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, pc_confs_no_corruption,\
+	dc_confs_no_corruption, dc_vars_no_corruption = gather_svhn_c_data(pc_dir='results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/svhn_c/cf_p_00/',
+						   pc_cf_dir='results/2022-09-25_19-24-15/model/post_hoc_results/closed_form/svhn_c/cf_p_01/',
+						   dc_dir='results/2022-09-19_23-07-08/model/post_hoc_results/closed_form/svhn_c/cf_p_01/',
+						   dropout_learning=0.1, dropout_inference=0.1, lmbda=1.0)
+	# # # plot_boxplots_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=1)
+	# # # plot_boxplots_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=2)
+	# # # plot_boxplots_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=3)
+	# # # plot_boxplots_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=4)
+	# # # plot_boxplots_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, severity=5)
+	# # plot_svhn_c(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances,
+	# # 			pc_confs_no_corruption, dc_confs_no_corruption, dc_vars_no_corruption)
+	#
+	# selected_corruptions = ['brightness', 'elastic_transform', 'frost', 'gaussian_noise', 'impulse_noise', 'shot_noise']
+	# plot_svhn_c_selected(pc_confidences, pc_cf_confidences, pc_cf_variances, dc_confidences, dc_variances, pc_confs_no_corruption,
+	# 					 dc_confs_no_corruption, dc_vars_no_corruption, selected=selected_corruptions)
+	sys.exit()
+
+	# breakpoint()
 	# test_cf()
 	# gen_class_probs_histograms()
 	# plot_with_kde = True
-	# gen_figure1_fmnist(kde=True, kde_plot=False, plot_entropy=True)
+	# gen_figure1_svhn_final_extended(kde=False, plot_entropy=True)
+	# gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=True)
 	# gen_figure1_fmnist(kde=False, kde_plot=False, plot_entropy=True)
 	# gen_figure1_mnist(kde=plot_with_kde)
 	# gen_figure1_svhn(kde=False, plot_entropy=True)
 	# gen_figure1_svhn_generative(kde=True, plot_entropy=False)
-	gen_figure1_svhn_final(kde=False, plot_entropy=True)
+	# gen_figure1_svhn_final(kde=False, plot_entropy=True)
 	sys.exit()
 	# gen_lls_histograms_cf('results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_fmnist_0.2_None.npy',
 	# 					  'results/2022-09-14_14-28-01/model/post_hoc_results/closed_form/ll_x_mnist_0.2_None.npy')

@@ -13,6 +13,8 @@ import numpy as np
 import seaborn as sns
 import os
 
+from icecream import ic
+
 
 colors = sns.color_palette("tab10")
 
@@ -326,7 +328,7 @@ def get_mnist_labels():
 
 
 def get_svhn_labels():
-    dataset = torchvision.datasets.SVHN(root="~/data/", split="test")
+    dataset = torchvision.datasets.SVHN(root="/media/data/data/", split="test", download=True)
     return dataset.labels
 
 
@@ -496,35 +498,40 @@ def figure_5():
         "shot_noise",
         "snow",
         "frost",
+        "impulse_noise",
+        "glass_blur",
+        "zoom_blur",
+        "jpeg_compression",
     ]
 
     no_corr_dict = {}
-    for typ in ["pc", "dc"]:
+    for typ in ["pc", "dc", "dc_vars"]:
         file = f"{typ}_no_corr.npy"
-        data = np.load(os.path.join("data", "fig5", file))
-        if typ == "dc":
+        data = np.load(os.path.join("svhn_corruptions", file))
+        if typ == "dc" or typ == "dc_vars":
             # DC data is normalized but in logspace
             data = np.exp(data)
         no_corr_dict[typ] = data
-
     #############
     # Load data #
     #############
 
     svhn_targets = get_svhn_labels()
     svhn_targets = svhn_targets[:, None].repeat(6, axis=1)
+    data_types = ["pc", "dc", "dc_vars"]
 
     data_dict = {}
     for corruption in corruption_labels:
         data_dict[corruption] = {}
-        for typ in ["pc", "dc"]:
+        for typ in data_types:
             data_dict[corruption][typ] = {}
             sevs = []
 
             sevs.append(no_corr_dict[typ])
             for severity in range(1, 6):
                 file = f"{typ}_{corruption}_{severity}.npy"
-                data = np.load(os.path.join("data", "fig5", file))
+                ic(os.path.join("data", "fig5", file))
+                data = np.load(os.path.join("svhn_corruptions", file))
                 if typ == "pc":
                     # PC data needs to be normalized
                     data = np.exp(data - np.repeat(scipy.special.logsumexp(data, axis=1).reshape(-1, 1), 10, axis=1))
@@ -546,118 +553,259 @@ def figure_5():
 
     if use_markers:
         alpha = 0.8
-        markers = ["o", "^"]
+        markers = ["o", "^", "^"]
     else:
         alpha = 1.0
-        markers = [None, None]
+        markers = [None, None, None]
 
     plt.style.use(["science", "grid"])
 
-    corruptions = ["brightness", "elastic_transform", "frost", "gaussian_noise"]
-    corruption_labels = ["Brightness", "Elastic transformation", "Frost", "Gaussian noise"]
-    labels = {"pc": "Probabilistic circuit", "dc": "Dropout circuit"}
+    # corruptions = ["brightness", "elastic_transform", "frost", "gaussian_noise"]
+    # corruption_labels = ["Brightness", "Elastic transformation", "Frost", "Gaussian noise"]
+    corruptions = ["gaussian_noise", "shot_noise", "impulse_noise", "defocus_blur", "glass_blur", "motion_blur",
+                   "zoom_blur", "snow", "frost", "fog", "brightness", "contrast", "elastic_transform", "pixelate",
+                   "jpeg_compression"]
+    corruption_labels = [corr.capitalize().replace("_", " ") for corr in corruptions]
+    labels = {"pc": "Probabilistic circuit", "dc": "Dropout circuit", "dc_vars": "Dropout circuit"}
+    # ic(get_figsize(scale=0.95, num_columns=0.5, aspect_ratio=0.5))
+
 
     # Use tueplots aistats2023 template
     with matplotlib.rc_context(aistats2023()):
 
+        width, height = get_figsize(scale=0.95, num_columns=0.5, aspect_ratio=0.5)
+        # adapt them for 3 rows and 5 columns
+        width = width + (width * 0.25)
+        height *= 3
+
         # Create figure with two subplots
         fig, axs = plt.subplots(
-            nrows=1, ncols=4, figsize=get_figsize(scale=0.95, num_columns=0.5, aspect_ratio=0.5), sharey=True
+            nrows=3, ncols=5, figsize=(width, height), sharey=True
         )
+        fig_vars, axs_vars = plt.subplots(
+            nrows=3, ncols=5, figsize=(width, height), sharey=True)
         # axs = axs.reshape(1, 4)
-        for row in range(1):
-            for col in range(4):
-                # ax = axs[row, col]
-                ax = axs[col]
-                ax1 = ax.twinx()
+        for row in range(3):
+            for col in range(5):
+                ax = axs[row, col]
+                ax_vars = axs_vars[row, col]
 
-                corr = corruptions[row * 4 + col]
+                # corr = corruptions[row * 4 + col]
+                corr = corruptions[row * 5 + col]
+
+                # ax = axs[col]
+                ax1 = ax.twinx()
 
                 #################################
                 # Plot entropy on first subplot #
                 #################################
-                for i, key in enumerate(["pc", "dc"]):
+                for i, key in enumerate(data_types):
                     x = range(0, 6)
                     y = data_dict[corr][key]
-                    y_entropy = np.median(entropy(y, axis=1), axis=0)
 
-                    # Plot pred entropy
-                    ax.plot(
-                        x,
-                        y_entropy,
-                        marker=markers[i],
-                        label=labels[key],
-                        markersize=markersize,
-                        markeredgecolor="black",
-                        markeredgewidth=0.5,
-                        color=colors[i],
-                        alpha=alpha,
-                    )
+                    if key == "dc_vars":
+                        pred_idx_dc = np.argmax(data_dict[corr]["dc"], axis=1)
+                        stds = np.sqrt(y)
+                        stds = np.take_along_axis(stds, pred_idx_dc[:, None, :], axis=1)[:, 0, :]
+                        stds = np.median(stds, axis=0)
 
-                    # Plot accuracy
-                    preds = np.argmax(y, axis=1)
-                    accuracy = (preds == svhn_targets).sum(0) / data.shape[0] * 100
-                    ax1.plot(
-                        x,
-                        accuracy,
-                        "--",
-                        marker=markers[i],
-                        label=labels[key],
-                        markersize=markersize,
-                        markeredgecolor="black",
-                        markeredgewidth=0.5,
-                        color=colors[i],
-                        alpha=alpha,
-                    )
+                        # Plot pred entropy
+                        ax_vars.plot(
+                            x,
+                            stds,
+                            marker=markers[i],
+                            label=labels[key],
+                            markersize=markersize,
+                            markeredgecolor="black",
+                            markeredgewidth=0.5,
+                            color=colors[data_types.index("dc")],
+                            alpha=alpha,
+                        )
+                        ax_vars.set_xticks([0, 1, 2, 3, 4, 5])
+                        ax_vars.set_xlim(0, 5)
+                        ax_vars.set_xlabel(corruption_labels[row * 5 + col], fontsize=label_fontsize)
 
-                ax.set_xticks([0, 1, 2, 3, 4, 5])
-                ax.set_xlim(0, 5)
-                ax.set_xlabel(corruption_labels[row * 4 + col], fontsize=label_fontsize)
-                ax1.grid(False)
+                        if row < 2:
+                            ax_vars.set_xticklabels([])
 
-                ax1.set_ylim(-5, 85)
-                if col < 3:
-                    ax1.set_yticks([], [])
-                else:
-                    ax1.set_ylabel("Accuracy (- -)", fontsize=label_fontsize - 1)
+                    else:
+                        y_entropy = np.median(entropy(y, axis=1), axis=0)
 
-        handles, labels = axs[0].get_legend_handles_labels()
+                        # Plot pred entropy
+                        ax.plot(
+                            x,
+                            y_entropy,
+                            marker=markers[i],
+                            label=labels[key],
+                            markersize=markersize,
+                            markeredgecolor="black",
+                            markeredgewidth=0.5,
+                            color=colors[i],
+                            alpha=alpha,
+                        )
 
+                        # Plot accuracy
+                        preds = np.argmax(y, axis=1)
+                        accuracy = (preds == svhn_targets).sum(0) / data.shape[0] * 100
+                        ax1.plot(
+                            x,
+                            accuracy,
+                            "--",
+                            marker=markers[i],
+                            label=labels[key],
+                            markersize=markersize,
+                            markeredgecolor="black",
+                            markeredgewidth=0.5,
+                            color=colors[i],
+                            alpha=alpha,
+                        )
 
-        # Add legend to the figure
-        legend = fig.legend(
-            handles,
-            labels,
-            alignment="center",
-            fancybox=False,
-            fontsize="x-small",
-            edgecolor="white",
-            # edgecolor="black",
-            loc="lower center",
-            ncol=2,
-            bbox_to_anchor=(0.75, -0.02),
-            columnspacing=1.0,
-        )
-        legend.get_frame().set_linewidth(0.5)
+                    ax.set_xticks([0, 1, 2, 3, 4, 5])
+                    ax.set_xlim(0, 5)
+                    ax.set_xlabel(corruption_labels[row * 5 + col], fontsize=label_fontsize)
+                    ax1.grid(False)
 
-        axs[0].set_ylabel("Predictive Entropy", fontsize=label_fontsize)
+                    if row < 2:
+                        ax.set_xticklabels([])
+
+                    ax1.set_ylim(-5, 85)
+                    if col < 4:
+                        ax1.set_yticks([], [])
+                    elif row == 1:
+                        ax1.set_ylabel("Accuracy (- -)", fontsize=label_fontsize - 1)
+
+        for pl, fi, bb_to_a in zip([axs, axs_vars], [fig, fig_vars], [(0.75, -0.02), (0.65, -0.02)]):
+            handles, labels = pl[0][0].get_legend_handles_labels()
+
+            # Add legend to the figure
+            legend = fi.legend(
+                handles,
+                labels,
+                alignment="center",
+                fancybox=False,
+                fontsize="x-small",
+                edgecolor="white",
+                # edgecolor="black",
+                loc="lower center",
+                ncol=2,
+                bbox_to_anchor=bb_to_a,
+                columnspacing=1.0,
+            )
+            legend.get_frame().set_linewidth(0.5)
+
+        # axs[0][0].set_ylabel("Predictive Entropy", fontsize=label_fontsize)
+        axs[1][0].set_ylabel("Predictive Entropy", fontsize=label_fontsize)
+        # axs[0][0].set_ylabel("Predictive Entropy", fontsize=label_fontsize)
+
+        axs_vars[1][0].set_ylabel("Predictive Uncertainty", fontsize=label_fontsize)
 
         # Set xlabel for the whole figure
         fig.supxlabel("Corruption severity", fontsize=label_fontsize)
+        fig_vars.supxlabel("Corruption severity", fontsize=label_fontsize)
 
         # Save fig
         name = "figure-5"
         path = os.path.join("figs", name)
         plt.tight_layout()
         print("Saving jpg")
-        plt.savefig(path + ".jpg", dpi=300)
+        fig.savefig(path + ".jpg", dpi=300)
         print("Saving pdf")
-        plt.savefig(path + ".pdf")
+        fig.savefig(path + ".pdf")
+        plt.close(fig)
+
+        name = "figure-5-vars"
+        path = os.path.join("figs", name)
+        plt.tight_layout()
+        print("Saving jpg")
+        fig_vars.savefig(path + ".jpg", dpi=300)
+        print("Saving pdf")
+        fig_vars.savefig(path + ".pdf")
+        plt.close(fig_vars)
+
+
+def plot_svhn_corruptions_examples(image_idx=19):
+    # from torchvision import transforms
+    from mpl_toolkits.axes_grid1 import ImageGrid
+
+    from imagecorruptions import corrupt, get_corruption_names
+    dataset = torchvision.datasets.SVHN(root="/media/data/data/", split="test", download=True)
+
+    # imgs = 0
+    # for img in dataset:
+    #     img[0].save(f"./svhn_imgs/test_{imgs}.png")
+    #     imgs += 1
+    #     if imgs > 99:
+    #         return
+
+    data_svhn = {}
+
+    corrupted_svhn_dir = '/home/fabrizio/research/svhn_c/'
+    for corruption in get_corruption_names('common'):
+        data_svhn[f"{corruption}_{0}"] = np.transpose(dataset.data, (0, 2, 3, 1))
+        for cl in range(5):
+            cl += 1
+            data_svhn[f"{corruption}_{cl}"] = np.load(
+                corrupted_svhn_dir + 'svhn_test_{}_l{}.npy'.format(corruption, cl))
+
+
+    with matplotlib.rc_context(aistats2023()):
+
+        fig = plt.figure(figsize=(15., 6.))
+        grid = ImageGrid(fig, 111, nrows_ncols=(15, 6), axes_pad=0.05)
+
+        corruption_levels = [0, 1, 2, 3, 4, 5]
+
+
+        plot_idx = 0
+
+        for plot_idx, (ax, (corruption, cl)) in enumerate(zip(grid,
+                                      list(
+                                          itertools.product(get_corruption_names('common'), corruption_levels))
+                                      )):
+            ax.imshow(
+                # np.transpose(data_svhn[f"{corruption}_{cl}"][image_idx], (1, 2, 0))
+                data_svhn[f"{corruption}_{cl}"][image_idx]
+            )
+            ax.set_xticks([],[])
+            ax.set_yticks([], [])
+            if plot_idx % 6 == 0:
+                ax.set_ylabel(corruption.capitalize().replace("_", " "), rotation='horizontal', #loc='center',
+                              ha='right', fontsize='x-small')
+            else:
+                ax.set_ylabel('')
+            if plot_idx >= 6*14:
+                ax.set_xlabel(plot_idx - 6*14, fontsize='x-small')
+
+        # get the extent of the largest box containing all the axes/subplots
+        extents = np.array([a.get_position().extents for a in grid])  # all axes extents
+        bigextents = np.empty(4)
+        bigextents[:2] = extents[:, :2].min(axis=0)
+        bigextents[2:] = extents[:, 2:].max(axis=0)
+
+        # text to mimic the x and y label. The text is positioned in the middle
+        labelpad = 0.05  # distance between the external axis and the text
+        xlab_t = fig.text((bigextents[2] + bigextents[0]) / 2, bigextents[1] - labelpad, 'Corruption severity',
+                          horizontalalignment='center', verticalalignment='bottom', fontsize='small')
+        # ylab_t = fig.text(bigextents[0] - labelpad, (bigextents[3] + bigextents[1]) / 2, 'y label',
+        #                   rotation='vertical', horizontalalignment='left', verticalalignment='center')
+
+        name = "svhn_corruptions_samples_{}".format(image_idx)
+        path = os.path.join("figs", name)
+        # plt.tight_layout()
+        print("Saving jpg")
+        fig.savefig(path + ".jpg", dpi=300)
+        print("Saving pdf")
+        fig.savefig(path + ".pdf")
+        plt.close(fig)
+
+
 
 
 if __name__ == "__main__":
     setup(use_pgf=False)
-    figure_1()
-    figure_3()
-    figure_4()
-    figure_5()
+    # figure_1()
+    # figure_3()
+    # figure_4()
+    # figure_5()
+    plot_svhn_corruptions_examples(image_idx=48)
+    plot_svhn_corruptions_examples(image_idx=50)
