@@ -12,6 +12,7 @@ from spn.algorithms.layerwise.utils import SamplingContext, logsumexp
 
 logger = logging.getLogger(__name__)
 
+
 class AbstractLayer(nn.Module, ABC):
     def __init__(self, in_features: int, num_repetitions: int = 1):
         super().__init__()
@@ -87,6 +88,11 @@ class Sum(AbstractLayer):
 
         Args:
             x: Input of shape [batch, in_features, in_channels].
+            test_dropout (bool, optional): Whether to use dropout at inference time.
+            dropout_inference (float, optional): The dropout p parameter to use at inference time.
+            dropout_cf (bool, optional): Whether to use the closed-form dropout at inference time.
+            vars: The variance, input from the bottom layer.
+            ll_correction (bool, optional): Whether to use the LL correction or not.
 
         Returns:
             torch.Tensor: Output of shape [batch, in_features, out_channels]
@@ -101,13 +107,6 @@ class Sum(AbstractLayer):
             while torch.any(torch.all(dropout_indices, dim=2)):
                 dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
             x[dropout_indices] = np.NINF
-        # if test_dropout and dropout_inference > 0.0 and not dropout_cf:
-        #     # ic('applying MCD sum node')
-        #     # TODO NOTE probably this is not the most efficient way to apply dropout here
-        #     dropout_indices = torch.distributions.Bernoulli(probs=dropout_inference).sample(x.shape).bool()
-        #     while torch.any(torch.all(dropout_indices, dim=2)):
-        #         dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
-        #     x[dropout_indices] = np.NINF
 
         # Dimensions
         N, D, IC, R = x.size()
@@ -122,8 +121,9 @@ class Sum(AbstractLayer):
         # Multiply (add in log-space) input features and weights
         log_probs = x + logweights  # Shape: [n, d, ic, oc, r]
 
-        log_q = np.log(1 - dropout_inference)
-        log_p = np.log(dropout_inference)
+        if test_dropout or dropout_inference > 0.0 or dropout_cf:
+            log_q = np.log(1 - dropout_inference)
+            log_p = np.log(dropout_inference)
 
         # Compute sum via logsumexp along in_channels dimension
         log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r] #
@@ -133,12 +133,6 @@ class Sum(AbstractLayer):
 
         # Assert correct dimensions
         assert log_probs.size() == (N, D, OC, R)
-
-        # # TODO NOTE add constant to account for reduction in expected LL with MCD
-        # if test_dropout and dropout_inference > 0.0 and not dropout_cf:
-        #     # ic("MCD PROBS ll_corr sum node")
-        #     log_probs = log_probs - log_q
-
         assert log_probs.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
 
         if vars is not None:

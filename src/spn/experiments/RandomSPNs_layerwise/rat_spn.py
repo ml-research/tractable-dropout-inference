@@ -14,6 +14,7 @@ from spn.experiments.RandomSPNs_layerwise.distributions import IndependentMultiv
 
 logger = logging.getLogger(__name__)
 
+
 def invert_permutation(p: torch.Tensor):
     """(left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]
     The argument p is assumed to be some permutation of 0, 1, ..., len(p)-1. 
@@ -259,6 +260,9 @@ class RatSpn(nn.Module):
 
         Args:
             x: Input.
+            test_dropout: Whether to use dropout at inference time.
+            dropout_inference: The dropout p parameter to use at inference time.
+            dropout_cf: Whether to use the closed-form dropout at inference time.
 
         Returns:
             torch.Tensor: Conditional log-likelihood P(X | C) of the input.
@@ -300,6 +304,9 @@ class RatSpn(nn.Module):
 
         Args:
             x: Input.
+            test_dropout: Whether to use dropout at inference time.
+            dropout_inference: The dropout p parameter to use at inference time.
+            dropout_cf: Whether to use the closed-form dropout at inference time.
 
         Returns:
             torch.Tensor: Output of the last layer before the root layer.

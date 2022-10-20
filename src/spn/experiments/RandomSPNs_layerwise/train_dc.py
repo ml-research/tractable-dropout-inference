@@ -7,18 +7,15 @@ import numpy as np
 import torch
 import torchvision
 from torch import nn
+from torch import optim
 from torchvision import datasets, transforms
 
 from spn.experiments.RandomSPNs_layerwise.distributions import RatNormal
 from spn.experiments.RandomSPNs_layerwise.rat_spn import RatSpn, RatSpnConfig
-from spn.algorithms.layerwise.distributions import Bernoulli
-
 
 from torch.utils.data import Dataset, ConcatDataset
 from PIL import Image
 import datetime
-
-from scipy.stats import entropy
 
 
 class CustomTensorDataset(Dataset):
@@ -79,12 +76,13 @@ def count_params(model: torch.nn.Module) -> int:
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
 
-def get_mnist_loaders(use_cuda, device, batch_size):
+def get_mnist_loaders(use_cuda, batch_size):
     """
     Get the MNIST pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
+        batch_size: The size of the batch.
     """
     kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
 
@@ -109,119 +107,92 @@ def get_mnist_loaders(use_cuda, device, batch_size):
     return train_loader, test_loader
 
 
-def get_lsun_loaders(use_cuda, device, batch_size):
+def get_lsun_loaders(use_cuda, batch_size):
     """
     Get the LSUN pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
+        batch_size: The size of the batch.
 
     """
     kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
 
     lsun_classes = ['church_outdoor']
 
-    # [lc + '_train' for lc in lsun_classes]
-    # lsun_raw_transformer = transforms.Compose([transforms.Resize((32,32)), transforms.ToTensor()])
-    # lsun_train_dataset = datasets.LSUN(root='/media/data/lsun_full/lsun', classes='val',
-    #                                    transform=lsun_raw_transformer)
-    #
-    # loader = torch.utils.data.DataLoader(lsun_train_dataset, batch_size=200, num_workers=0, shuffle=False)
-    #
-    # mean = 0.0
-    # for images, _ in loader:
-    #     batch_samples = images.size(0)
-    #     images = images.view(batch_samples, images.size(1), -1)
-    #     mean += images.mean(2).sum(0)
-    # mean = mean / len(loader.dataset)
-    #
-    # var = 0.0
-    # for images, _ in loader:
-    #     batch_samples = images.size(0)
-    #     images = images.view(batch_samples, images.size(1), -1)
-    #     var += ((images - mean.unsqueeze(1)) ** 2).sum([0, 2])
-    # std = torch.sqrt(var / (len(loader.dataset) * 224 * 224))
-    # ic(mean)
-    # ic(std)
-
-    """
-    mean and standard deviation computed on the valid set
-    """
-    lsun_valid_mean = (0.5071, 0.4699, 0.4325)
-    lsun_valid_std = (0.0355, 0.0356, 0.0382)
-
     # mean and std for church_outdoor (train set)
     lsun_mean = (0.4846, 0.5057, 0.5166)
     lsun_std = (0.0356, 0.0352, 0.0414)
-    #
-    # data_r = np.dstack([lsun_train_dataset[i][1][:, :, 0] for i in range(len(lsun_train_dataset))])
-    # data_g = np.dstack([lsun_train_dataset[i][1][:, :, 1] for i in range(len(lsun_train_dataset))])
-    # data_b = np.dstack([lsun_train_dataset[i][1][:, :, 2] for i in range(len(lsun_train_dataset))])
-    # lsun_mean = np.mean(data_r), np.mean(data_g), np.mean(data_b)
-    # lsun_std = np.std(data_r), np.std(data_g), np.std(data_b)
 
-
-    lsun_transformer = transforms.Compose([transforms.Resize((32,32)), transforms.ToTensor(),
+    lsun_transformer = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(),
                                            transforms.Normalize(mean=lsun_mean, std=lsun_std),
                                           ])
 
     lsun_train_loader = torch.utils.data.DataLoader(
-        datasets.LSUN(root='/media/data/lsun_full/lsun', classes=[lc + '_train' for lc in lsun_classes], transform=lsun_transformer),
+        datasets.LSUN(root=LSUN_DIR, classes=[lc + '_train' for lc in lsun_classes],
+                      transform=lsun_transformer),
         batch_size=batch_size,
         shuffle=True,
         **kwargs
     )
 
-    lsun_transformer_valid = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(),
-                                           transforms.Normalize(mean=lsun_valid_mean, std=lsun_valid_std),
-                                           ])
+    # mean and standard deviation computed on the valid set
+    lsun_valid_mean = (0.5071, 0.4699, 0.4325)
+    lsun_valid_std = (0.0355, 0.0356, 0.0382)
 
-    # classes=[lc + '_val' for lc in lsun_classes]
+    lsun_transformer_valid = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(),
+                                                 transforms.Normalize(mean=lsun_valid_mean, std=lsun_valid_std),
+                                                 ])
+
+    # use valid set instead of the test set, since it has a more reasonable size i.e. 3k samples
     lsun_test_loader = torch.utils.data.DataLoader(
-        datasets.LSUN(root='/media/data/lsun_full/lsun', classes='val', transform=lsun_transformer_valid),
+        datasets.LSUN(root=LSUN_DIR, classes='val', transform=lsun_transformer_valid),
         batch_size=batch_size,
         shuffle=False,
         **kwargs
     )
     return lsun_train_loader, lsun_test_loader
 
-def get_cifar_loaders(use_cuda, device, batch_size):
+
+def get_cifar_loaders(use_cuda, batch_size):
     """
     Get the CIFAR10 pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
-
+        batch_size: The size of the batch.
     """
     kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
-    cifar10_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))])
+    cifar10_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize(
+        (0.4914, 0.4822, 0.4465), (0.2470, 0.2435, 0.2616))])
 
     cifar10_train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='../data', train=True, download=True, transform=cifar10_transformer),
+        datasets.CIFAR10(root=CIFAR10_DIR, train=True, download=True, transform=cifar10_transformer),
         batch_size=batch_size,
         shuffle=True,
         **kwargs
     )
 
     cifar10_test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR10(root='../data', train=False, download=True, transform=cifar10_transformer),
+        datasets.CIFAR10(root=CIFAR10_DIR, train=False, download=True, transform=cifar10_transformer),
         batch_size=batch_size,
         shuffle=False,
         **kwargs
     )
     return cifar10_train_loader, cifar10_test_loader
 
-def get_cinic_loaders(use_cuda, device, batch_size):
+
+def get_cinic_loaders(use_cuda, batch_size):
     """
     Get the CINIC pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
+        batch_size: The size of the batch.
 
     """
     kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
 
-    cinic_directory = '/media/data/data/cinic'
     cinic_mean = [0.47889522, 0.47227842, 0.43047404]
     cinic_std = [0.24205776, 0.23828046, 0.25874835]
 
@@ -229,37 +200,39 @@ def get_cinic_loaders(use_cuda, device, batch_size):
                         transforms.Normalize(mean=cinic_mean,
                                              std=cinic_std)])
 
-    cinic_train = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(cinic_directory + '/train',
+    cinic_train = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(CINIC_DIR + '/train',
                                                                                transform=cinic_transformer),
-                                              batch_size=batch_size, shuffle=True)
+                                              batch_size=batch_size, shuffle=True, **kwargs)
 
-    cinic_test = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(cinic_directory + '/test',
+    cinic_test = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(CINIC_DIR + '/test',
                                                                               transform=cinic_transformer),
-                                             batch_size=batch_size, shuffle=True)
-
+                                             batch_size=batch_size, shuffle=True, **kwargs)
 
     return cinic_train, cinic_test
 
-def get_cifar100_loaders(use_cuda, device, batch_size):
+
+def get_cifar100_loaders(use_cuda, batch_size):
     """
     Get the CIFAR100 pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
+        batch_size: The size of the batch.
 
     """
     kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
-    cifar100_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762))])
+    cifar100_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize(
+        (0.5071, 0.4865, 0.4409), (0.2673, 0.2564, 0.2762))])
 
     cifar100_train_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100(root='../data', train=True, download=True, transform=cifar100_transformer),
+        datasets.CIFAR100(root=CIFAR100_DIR, train=True, download=True, transform=cifar100_transformer),
         batch_size=batch_size,
         shuffle=True,
         **kwargs
     )
 
     cifar100_test_loader = torch.utils.data.DataLoader(
-        datasets.CIFAR100(root='../data', train=False, download=True, transform=cifar100_transformer),
+        datasets.CIFAR100(root=CIFAR100_DIR, train=False, download=True, transform=cifar100_transformer),
         batch_size=batch_size,
         shuffle=False,
         **kwargs
@@ -267,22 +240,27 @@ def get_cifar100_loaders(use_cuda, device, batch_size):
     return cifar100_train_loader, cifar100_test_loader
 
 
-def get_svhn_loaders(use_cuda, device, batch_size, add_extra=True):
+def get_svhn_loaders(use_cuda, batch_size, add_extra=True):
     """
     Get the SVHN pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
+        batch_size: The size of the batch.
+        add_extra: Add extra data samples.
 
     """
     kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
-    svhn_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.4377, 0.4438, 0.4728), (0.198, 0.201, 0.197))])
+    svhn_transformer = transforms.Compose([transforms.ToTensor(), transforms.Normalize(
+        (0.4377, 0.4438, 0.4728), (0.198, 0.201, 0.197))])
 
     if add_extra:
-        train_dataset = ConcatDataset([datasets.SVHN(root='../data', split='train', download=True, transform=svhn_transformer),
-                                       datasets.SVHN(root='../data', split='extra', download=True, transform=svhn_transformer)])
+        train_dataset = ConcatDataset([datasets.SVHN(
+            root='../data', split='train', download=True, transform=svhn_transformer),
+                                       datasets.SVHN(
+                                           root=SVHN_DIR, split='extra', download=True, transform=svhn_transformer)])
     else:
-        train_dataset = datasets.SVHN(root='../data', split='train', download=True, transform=svhn_transformer)
+        train_dataset = datasets.SVHN(root=SVHN_DIR, split='train', download=True, transform=svhn_transformer)
 
     svhn_train_loader = torch.utils.data.DataLoader(
         train_dataset,
@@ -292,7 +270,7 @@ def get_svhn_loaders(use_cuda, device, batch_size, add_extra=True):
     )
 
     svhn_test_loader = torch.utils.data.DataLoader(
-        datasets.SVHN(root='../data', split='test', download=True, transform=svhn_transformer),
+        datasets.SVHN(root=SVHN_DIR, split='test', download=True, transform=svhn_transformer),
         batch_size=batch_size,
         shuffle=False,
         **kwargs
@@ -301,19 +279,19 @@ def get_svhn_loaders(use_cuda, device, batch_size, add_extra=True):
     return svhn_train_loader, svhn_test_loader
 
 
-def get_data_loaders(use_cuda, device, batch_size, dataset='mnist'):
+def get_data_loaders(use_cuda, batch_size, dataset='mnist'):
     if dataset == 'mnist':
-        return get_mnist_loaders(use_cuda, device, batch_size)
+        return get_mnist_loaders(use_cuda, batch_size)
     elif dataset == 'cifar':
-        return get_cifar_loaders(use_cuda, device, batch_size)
+        return get_cifar_loaders(use_cuda, batch_size)
     elif dataset == 'svhn':
-        return get_svhn_loaders(use_cuda, device, batch_size)
+        return get_svhn_loaders(use_cuda, batch_size)
     elif dataset == 'cifar100':
-        return get_cifar100_loaders(use_cuda, device, batch_size)
+        return get_cifar100_loaders(use_cuda, batch_size)
     elif dataset == 'cinic':
-        return get_cinic_loaders(use_cuda, device, batch_size)
+        return get_cinic_loaders(use_cuda, batch_size)
     elif dataset == 'lsun':
-        return get_lsun_loaders(use_cuda, device, batch_size)
+        return get_lsun_loaders(use_cuda, batch_size)
 
 
 def get_data_flatten_shape(data_loader):
@@ -321,9 +299,9 @@ def get_data_flatten_shape(data_loader):
         return (data_loader.dataset.cumulative_sizes[-1],
                 torch.prod(torch.tensor(data_loader.dataset.datasets[0].data.shape[1:])).int().item())
     if 'lsun' in data_loader.dataset.root:
-        return(data_loader.dataset.length, 3*32*32)
+        return data_loader.dataset.length, 3*32*32
     if isinstance(data_loader.dataset, torchvision.datasets.ImageFolder):
-        return(len(data_loader.dataset), 3*32*32)
+        return len(data_loader.dataset), 3*32*32
     return (data_loader.dataset.data.shape[0],
             torch.prod(torch.tensor(data_loader.dataset.data.shape[1:])).int().item())
 
@@ -352,18 +330,15 @@ def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10, leaf_distribution=Rat
     return model
 
 
-def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, batch_size=200, rat_S=20, rat_I=20, rat_D=5,
-                               rat_R=5, corrupted_svhn_dir='', model=None, dropout_learning=None, lmbda=None,
-                               class_label=None):
+def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20, rat_I=20, rat_D=5, rat_R=5,
+                               corrupted_svhn_dir='', model=None, dropout_learning=None, class_label=None):
 
-    from imagecorruptions import corrupt, get_corruption_names
+    from imagecorruptions import get_corruption_names
 
-    dev = sys.argv[1]
-    device = torch.device("cuda:0")
-    use_cuda = True
+    device = sys.argv[1]
     torch.cuda.benchmark = True
 
-    d = model_dir + "post_hoc_results/closed_form/svhn_c/cf_p_{}/".format(str(dropout_inference).replace('.', ''))
+    d = model_dir + "closed_form/svhn_c/cf_p_{}/".format(str(dropout_inference).replace('.', ''))
     ensure_dir(d)
     n_features = 3 * 32 * 32
     leaves = RatNormal
@@ -375,16 +350,9 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, batch_siz
 
         checkpoint = torch.load(model_dir + 'checkpoint.tar')
         model.load_state_dict(checkpoint['model_state_dict'])
-        # old models
-        # model.load_state_dict(torch.load(model_dir + 'model.pt'))
         model.eval()
         device = torch.device("cuda")
         model.to(device)
-        print(model)
-        # breakpoint()
-
-    tag = "Testing Closed Form dropout: "
-    criterion = nn.CrossEntropyLoss(reduction="sum")
 
     for corruption in get_corruption_names('common'):
         for cl in range(5):
@@ -456,52 +424,45 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, batch_siz
 
             fold = 'test'
             training_dataset = 'svhn'
-            np.save(d + 'output_{}_{}_{}_{}_{}_{}_{}'.format(
-                training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), output_res)
+            np.save(d + 'output_{}_{}_{}_{}_{}_{}'.format(
+                training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), output_res)
             if dropout_inference > 0.0:
-                np.save(d + 'var_{}_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), var_res)
-                np.save(d + 'll_x_{}_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), ll_x_res)
-                np.save(d + 'var_x_{}_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl), var_x_res)
-                np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl),
+                np.save(d + 'var_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), var_res)
+                np.save(d + 'll_x_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), ll_x_res)
+                np.save(d + 'var_x_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), var_x_res)
+                np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl),
                         root_heads_res)
-                np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, lmbda, dropout_learning, dropout_inference, corruption, cl),
+                np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl),
                         heads_vars_res)
     return model
 
 
 def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
                     rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None, eval_train_set=False,
-                     dropout_learning=None, lmbda=None, ll_correction=False,
-                     ):
-    ic(training_dataset)
-    ic(rotation)
-    ic(dropout_learning)
-    ic(dropout_inference)
-    # dev = sys.argv[1]
-    # device = torch.device("cuda:0")
+                     dropout_learning=None, ll_correction=False):
+    print(training_dataset)
+    print(rotation)
+    print(dropout_inference)
+
     device = sys.argv[1]
     use_cuda = True
     torch.cuda.benchmark = True
 
-    d = model_dir + "post_hoc_results/closed_form/"
+    d = model_dir + "closed_form/"
     ensure_dir(d)
-    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device,
-                                                 dataset=training_dataset)
+    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, dataset=training_dataset)
     if eval_train_set:
         test_loader = train_loader
 
     n_features = get_data_flatten_shape(train_loader)[1]
-    if training_dataset in DEBD:
-        leaves = Bernoulli
-        rat_C = 2
-    else:
-        leaves = RatNormal
-        rat_C = 10
+
+    leaves = RatNormal
+    rat_C = 10
 
     if not model:
         model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=device, dropout=dropout_inference, F=n_features,
@@ -509,13 +470,9 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
 
         checkpoint = torch.load(model_dir + 'checkpoint.tar')
         model.load_state_dict(checkpoint['model_state_dict'])
-        # old models
-        # model.load_state_dict(torch.load(model_dir + 'model.pt'))
         model.eval()
         device = torch.device("cuda")
         model.to(device)
-        print(model)
-        # breakpoint()
 
     tag = "Testing Closed Form dropout: "
 
@@ -598,30 +555,24 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         fold = 'train'
     else:
         fold = 'test'
-    np.save(d + 'output_{}_{}_{}_{}_{}_{}_{}'.format(
-        training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation, ll_correction), output_res)
+    np.save(d + 'output_{}_{}_{}_{}_{}_{}'.format(
+        training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction), output_res)
     if dropout_inference > 0.0:
-        np.save(d + 'var_{}_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation, ll_correction), var_res)
-        np.save(d + 'll_x_{}_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation, ll_correction), ll_x_res)
-        np.save(d + 'var_x_{}_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation, ll_correction), var_x_res)
-        np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation, ll_correction), root_heads_res)
-        np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, lmbda, dropout_learning, dropout_inference, rotation, ll_correction), heads_vars_res)
-
-    # ic((output_res - np.logsumexp(output_res, axis=1)).exp().max(axis=1).mean())
-    ic(class_probs.max(dim=1)[0].mean())
-    ic(np.exp(output_res).max(axis=1).mean())
-
-    if dropout_inference > 0.0:
-        cf_std_0 = np.take_along_axis(np.exp(var_res), np.expand_dims(np.argmax(output_res, axis=1), axis=1),
-                                      axis=1).flatten()
-        cf_std_0 = cf_std_0.sum() / 10000  # dataset size
-        cf_std_0 = np.sqrt(cf_std_0)
-        ic(cf_std_0)
+        np.save(d + 'var_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+                var_res)
+        np.save(d + 'll_x_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+                ll_x_res)
+        np.save(d + 'var_x_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+                var_x_res)
+        np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+                root_heads_res)
+        np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+                heads_vars_res)
 
     loss_ce /= len(test_loader.dataset)
     loss_nll /= len(test_loader.dataset) + get_data_flatten_shape(test_loader)[1]
@@ -641,17 +592,17 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
     return model
 
 
-def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0.0, training_dataset='mnist',
-              lmbda=0.0, eval_single_digit=False, toy_setting=False, eval_rotation=False, mnist_corruptions=False,
-              n_mcd_passes=100, corrupted_cifar_dir='', eval_every_n_epochs=5, lr=1e-3, dropout_cf=False):
+def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist', eval_every_n_epochs=5, lr=1e-3):
     """Run the torch code.
 
     Args:
         n_epochs (int, optional): Number of epochs.
         batch_size (int, optional): Batch size.
+        dropout (int, optional): Dropout p parameter during training.
+        training_dataset (str, optional): Dataset name to be used for training.
+        eval_every_n_epochs (int, optional): Interval of epochs before evaluating the model during training.
+        lr (float, optional): Learning rate.
     """
-    from torch import optim
-    from torch import nn
 
     assert len(sys.argv) == 2, "Usage: train.mnist cuda/cpu"
     dev = sys.argv[1]
@@ -668,59 +619,36 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
     d = "results/{}/".format(datetime_str)
     ensure_dir(d)
 
-    rtpt = RTPT(name_initials='FV', experiment_name='DCs', max_iterations=n_epochs+10)
-
-
-    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, device=device, dataset=training_dataset)
+    train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, dataset=training_dataset)
     n_features = get_data_flatten_shape(train_loader)[1]
 
     rat_S, rat_I, rat_D, rat_R, rat_C, leaves = 20, 20, 5, 5, 10, RatNormal
 
-    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout_spn, F=n_features, C=rat_C,
+    model = make_spn(S=rat_S, I=rat_I, D=rat_D, R=rat_R, device=dev, dropout=dropout, F=n_features, C=rat_C,
                      leaf_distribution=leaves)
     model.train()
     n_rat_params = count_params(model)
-    print("Number of pytorch parameters: ", n_rat_params)
+    print("Number of parameters: ", n_rat_params)
 
     # Define optimizer
-    if model.config.C == 2:
-        loss_fn = nn.BCELoss()
-    else:
-        loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss()
 
     optimizer = optim.Adam(model.parameters(), lr=lr)
     print("Learning rate: {}".format(lr))
 
     log_interval = 100
 
-    training_string = ""
+    # training_string = ""
 
-    d_samples = d + "samples/"
     d_results = d + "results/"
     d_model = d + "model/"
-    ensure_dir(d_samples)
     ensure_dir(d_results)
     ensure_dir(d_model)
-
-    loss_epoch = []
-    loss_ce_epoch = []
-    loss_nll_epoch = []
-
-    test_loss = []
-    test_loss_ce = []
-    test_loss_nll = []
 
     for epoch in range(n_epochs):
         model.train()
         t_start = time.time()
-
         running_loss = 0.0
-        running_loss_ce = 0.0
-        running_loss_nll = 0.0
-
-        epoch_loss = 0.0
-        epoch_loss_ce = 0.0
-        epoch_loss_nll = 0.0
 
         for batch_index, (data, target) in enumerate(train_loader):
 
@@ -735,82 +663,46 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
             output = model(data)
 
             # Compute loss
-
-            loss_ce = loss_fn(output, target)
-
-            loss_nll = -output.sum() / (data.shape[0] * n_features)
-
-            loss = (1 - lmbda) * loss_nll + lmbda * loss_ce
+            loss = loss_fn(output, target)
 
             # Backprop
             loss.backward()
             optimizer.step()
 
-            epoch_loss += loss.item()
-            epoch_loss_ce += loss_ce.item()
-            epoch_loss_nll += loss_nll.item()
-
             # Log stuff
             running_loss += loss.item()
-            running_loss_ce += loss_ce.item()
-            running_loss_nll += loss_nll.item()
-
-            rtpt.step()
 
             if batch_index % log_interval == (log_interval - 1):
-                if model.config.C == 2:
-                    target = target.argmax(dim=1)
                 pred = output.argmax(1).eq(target).sum().cpu().numpy() / data.shape[0] * 100
                 print(
-                    "Train Epoch: {} [{: >5}/{: <5} ({:.0f}%)]\tLoss_ce: {:.6f}\tLoss_nll: {:.6f}\tAccuracy: {:.0f}%".format(
+                    "Train Epoch: {} [{: >5}/{: <5} ({:.0f}%)]\tLoss: {:.6f}\tAccuracy: {:.0f}%".format(
                         epoch,
                         batch_index * len(data),
-                        60000, # TODO this is wrong, take the actual length from the data laodeer
+                        get_data_flatten_shape(train_loader)[0],
                         100.0 * batch_index / len(train_loader),
-                        running_loss_ce / log_interval,
-                        running_loss_nll / log_interval,
+                        running_loss / log_interval,
                         pred,
                     ),
                     end="\r",
                 )
                 running_loss = 0.0
-                running_loss_ce = 0.0
-                running_loss_nll = 0.0
-
 
         t_delta = time_delta_now(t_start)
         print("Train Epoch {} took {}".format(epoch, t_delta))
-        loss_epoch.append(epoch_loss / len(train_loader))
-        loss_ce_epoch.append(epoch_loss_ce / len(train_loader))
-        loss_nll_epoch.append(epoch_loss_nll / len(train_loader))
-
 
         if epoch % eval_every_n_epochs == (eval_every_n_epochs-1):
             print("Evaluating model...")
-            lls_train, class_probs_train, _, _, train_loss_ce_ep, train_loss_nll_ep =\
-                evaluate_model(model, device,train_loader, "{}^ epoch - Train".format(epoch+1), output_dir=d)
-            test_lls, class_probs_test, _, _, test_loss_ce_ep, test_loss_nll_ep =\
-                evaluate_model(model, device, test_loader, "{}^ epoch - Test".format(epoch+1), output_dir=d)
+            evaluate_model(model, device,train_loader, "{}^ epoch - Train".format(epoch+1), output_dir=d)
+            evaluate_model(model, device, test_loader, "{}^ epoch - Test".format(epoch+1), output_dir=d)
 
-            test_loss_ce.append([epoch, test_loss_ce_ep])
-            test_loss_nll.append([epoch, test_loss_nll_ep.cpu().item()])
-            test_loss.append([epoch, (1 - lmbda) * test_loss_nll_ep.cpu().item() + lmbda * test_loss_ce_ep])
-
-            print("Train class entropy: {} Test class entropy: {}".format(entropy(class_probs_train, axis=1).sum(),
-                                                                          entropy(class_probs_test, axis=1).sum()))
             print('Saving model... epoch {}'.format(epoch))
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
-                'loss_ce': loss_ce,
-                'loss_nll': loss_nll,
-                'lmbda': lmbda,
                 'lr': lr,
             }, d + 'model/checkpoint.tar')
-
-
 
     print('Saving model...')
     torch.save({
@@ -818,22 +710,11 @@ def run_torch(n_epochs=100, batch_size=256, dropout_inference=0.1, dropout_spn=0
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'loss': loss,
-        'loss_ce': loss_ce,
-        'loss_nll': loss_nll,
-        'lmbda': lmbda,
         'lr': lr,
     }, d + 'model/checkpoint.tar')
 
-    train_lls, class_probs_train, train_lls_sup, train_lls_unsup, train_loss_ce_final, train_loss_nll_final = evaluate_model(model, device, train_loader, "Train", output_dir=d)
-    test_lls, class_probs_test, test_lls_sup, test_lls_unsup, test_loss_ce_final, test_loss_nll_final = evaluate_model(model, device, test_loader, "Test", output_dir=d)
-
-    test_loss_ce.append([n_epochs-1, test_loss_ce_final])
-    test_loss_nll.append([n_epochs-1, test_loss_nll_final.cpu().item()])
-    test_loss.append([n_epochs-1, (1 - lmbda) * test_loss_nll_final.cpu().item() + lmbda * test_loss_ce_final])
-
-    print("Train class entropy: {} Test class entropy: {}".format(entropy(class_probs_train, axis=1).sum(), entropy(class_probs_test, axis=1).sum()))
-    training_curves_data = {"training_loss":loss_epoch, "training_loss_ce":loss_ce_epoch, "training_loss_nll":loss_nll_epoch,
-                            "test_loss":test_loss, "test_loss_ce":test_loss_ce, "test_loss_nll":test_loss_nll}
+    evaluate_model(model, device, train_loader, "Train", output_dir=d)
+    evaluate_model(model, device, test_loader, "Test", output_dir=d)
 
 
 def evaluate_model(model: torch.nn.Module, device, loader, tag, output_dir="") -> float:
@@ -845,62 +726,39 @@ def evaluate_model(model: torch.nn.Module, device, loader, tag, output_dir="") -
         device: Execution device.
         loader: Data loader.
         tag (str): Tag for information.
+        output_dir (str): Path of the directory where to store training information.
 
     Returns:
         float: Tuple of loss and accuracy.
     """
     model.eval()
-    loss_ce = 0
-    loss_nll = 0
-    data_ll = []
-    data_ll_super = [] # pick it from the label-th head
-    data_ll_unsup = [] # pick the max one
-    class_probs = torch.zeros((get_data_flatten_shape(loader)[0], model.config.C)).to(device)
+    loss = 0
     correct = 0
-
     criterion = nn.CrossEntropyLoss(reduction="sum")
 
     with torch.no_grad():
         for batch_index, (data, target) in enumerate(loader):
             data, target = data.to(device), target.to(device)
-            #print(target)
             data = data.view(data.shape[0], -1)
             output = model(data)
 
             # sum up batch loss
-            if model.config.C == 2:
-                c_probs = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
-                c_probs = c_probs.gather(1, target.reshape(-1, 1)).flatten()
-                loss_ce += criterion(c_probs, target.float()).item()
-            else:
-                loss_ce += criterion(output, target).item()
+            loss += criterion(output, target).item()
 
-
-
-            data_ll.extend(torch.logsumexp(output, dim=1).detach().cpu().numpy())
-            data_ll_unsup.extend(output.max(dim=1)[0].detach().cpu().numpy())
-            data_ll_super.extend(output.gather(1, target.reshape(-1, 1)).squeeze().detach().cpu().numpy())
-            class_probs[batch_index * loader.batch_size: (batch_index+1)*loader.batch_size, :] = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
-
-            loss_nll += -output.sum()
             pred = output.argmax(dim=1)
             correct += (pred == target).sum().item()
 
-    loss_ce /= len(loader.dataset)
-    loss_nll /= len(loader.dataset) + get_data_flatten_shape(loader)[1]
+    loss /= len(loader.dataset)
     accuracy = 100.0 * correct / len(loader.dataset)
 
-    output_string = "{} set: Average loss_ce: {:.4f} Average loss_nll: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
-            tag, loss_ce, loss_nll, correct, len(loader.dataset), accuracy
+    output_string = "{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
+            tag, loss, correct, len(loader.dataset), accuracy
     )
     print(output_string)
     with open(output_dir + 'training.out', 'a') as writer:
         writer.write(output_string + "\n")
-    assert len(data_ll) == get_data_flatten_shape(loader)[0]
-    assert len(data_ll_super) == get_data_flatten_shape(loader)[0]
-    assert len(data_ll_unsup) == get_data_flatten_shape(loader)[0]
-    return data_ll, class_probs.detach().cpu().numpy(), data_ll_super, data_ll_unsup, loss_ce, loss_nll
 
+    return loss
 
 
 def ensure_dir(path: str):
@@ -915,7 +773,6 @@ def ensure_dir(path: str):
     d = os.path.dirname(path)
     if not os.path.exists(d):
         os.makedirs(d)
-
 
 
 def set_seed(seed: int):
@@ -935,5 +792,14 @@ if __name__ == "__main__":
     torch.cuda.benchmark = True
     set_seed(0)
 
-    corrupted_svhn_dir = '' #TODO read it from args
+    LSUN_DIR = '/media/data/lsun_full/lsun'
+    CIFAR10_DIR = '../data'
+    CIFAR100_DIR = '../data'
+    CINIC_DIR = '/media/data/data/cinic'
+    SVHN_DIR = '../data'
+    CORRUPTED_SVHN_DIR = ''
+
+    run_torch(n_epochs=100, batch_size=200, dropout=0.2, training_dataset='mnist')
+    # learn and save a model
+    # run inference
 
