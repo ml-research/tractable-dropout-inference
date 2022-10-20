@@ -17,6 +17,8 @@ from torch.utils.data import Dataset, ConcatDataset
 from PIL import Image
 import datetime
 
+from fig_rotated_mnist import plot_figure
+
 
 class CustomTensorDataset(Dataset):
     """TensorDataset with support of transforms.
@@ -790,8 +792,6 @@ if __name__ == "__main__":
         dc, class_probs, vars = test_closed_form(model_dir='', training_dataset='mnist', dropout_inference=0.2,
                                                  batch_size=100, rotation=rotation, model=dc, eval_train_set=False)
         results[rotation] = (class_probs, vars)
-    # breakpoint()
 
-    from fig_rotated_mnist import plot_figure
     plot_figure(results, rotations)
 

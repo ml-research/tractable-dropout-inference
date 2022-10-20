@@ -145,9 +145,8 @@ def plot_figure(data, rotations):
         ax01.grid(False)
         ax01.set_ylim(-5, 105)
 
-        ax0.set_xticks(rotations)
+        ax0.set_xticks([0, 15, 30, 45, 60, 75, 90])
         ax0.set_ylabel("Pred. Entropy", fontsize=label_fontsize)
-        # ax0.set_yticks([0.0, 0.1, 0.2], ["0.00", "0.10", "0.20"])
         ax0.set_ylim(np.max(y) - np.max(y) * 1.05, np.max(y) * 1.05)
 
         ##############################
@@ -172,7 +171,6 @@ def plot_figure(data, rotations):
         )
         ax1.set_ylabel("Pred. Uncertainty", fontsize=label_fontsize)
         ax1.set_ylim(np.max(stds) - np.max(stds) * 1.05, np.max(stds) * 1.05)
-        # ax1.set_yticks([0.0, 0.03, 0.06])
 
         handles, labels = ax0.get_legend_handles_labels()
 
