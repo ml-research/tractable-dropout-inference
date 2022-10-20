@@ -17,3 +17,7 @@ dataclasses
 imageio
 scikit-image
 wand
+imagecorruptions
+tueplots
+scienceplots
+

@@ -331,7 +331,7 @@ def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10, leaf_distribution=Rat
 
 
 def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20, rat_I=20, rat_D=5, rat_R=5,
-                               corrupted_svhn_dir='', model=None, dropout_learning=None, class_label=None):
+                               corrupted_svhn_dir='', model=None, class_label=None):
 
     from imagecorruptions import get_corruption_names
 
@@ -396,6 +396,9 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20,
                             model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
                     else:
                         output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
+                        # normalize output in log space when dropout is not applied at inference time
+                        output = output - np.repeat(
+                            output.special.logsumexp(output, axis=1).reshape(-1, 1), 10, axis=1)
 
                     if batch_index == 0:
                         output_res = output.detach().cpu().numpy()
@@ -424,30 +427,27 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20,
 
             fold = 'test'
             training_dataset = 'svhn'
-            np.save(d + 'output_{}_{}_{}_{}_{}_{}'.format(
-                training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), output_res)
+            np.save(d + 'output_{}_{}_{}_{}_{}'.format(
+                training_dataset, fold, dropout_inference, corruption, cl), output_res)
             if dropout_inference > 0.0:
-                np.save(d + 'var_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), var_res)
-                np.save(d + 'll_x_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), ll_x_res)
-                np.save(d + 'var_x_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl), var_x_res)
-                np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl),
+                np.save(d + 'var_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_inference, corruption, cl), var_res)
+                np.save(d + 'll_x_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_inference, corruption, cl), ll_x_res)
+                np.save(d + 'var_x_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_inference, corruption, cl), var_x_res)
+                np.save(d + 'heads_x_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_inference, corruption, cl),
                         root_heads_res)
-                np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}'.format(
-                    training_dataset, fold, dropout_learning, dropout_inference, corruption, cl),
+                np.save(d + 'heads_vars_{}_{}_{}_{}_{}'.format(
+                    training_dataset, fold, dropout_inference, corruption, cl),
                         heads_vars_res)
     return model
 
 
 def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
                     rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None, eval_train_set=False,
-                     dropout_learning=None, ll_correction=False):
-    print(training_dataset)
-    print(rotation)
-    print(dropout_inference)
+                    ll_correction=False):
 
     device = sys.argv[1]
     use_cuda = True
@@ -474,20 +474,16 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         device = torch.device("cuda")
         model.to(device)
 
-    tag = "Testing Closed Form dropout: "
+    tag = "Testing closed-form dropout: "
 
-    loss_ce = 0
-    loss_nll = 0
-    data_ll = []
-    data_ll_super = []  # pick it from the label-th head
-    data_ll_unsup = []  # pick the max one
-    class_probs = torch.zeros((get_data_flatten_shape(test_loader)[0], model.config.C)).to(device)
+    loss = 0
     correct = 0
 
     if rotation is not None:
         if training_dataset == 'mnist':
             mean = 0.1307
             std = 0.3081
+            print("Performing inference with rotation of {} degrees...".format(rotation))
         else:
             raise NotImplementedError()
 
@@ -509,6 +505,9 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
                           ll_correction=ll_correction)
             else:
                 output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
+                # normalize output in log space when dropout is not applied at inference time
+                output = output - np.repeat(
+                    output.special.logsumexp(output, axis=1).reshape(-1, 1), 10, axis=1)
 
             if batch_index == 0:
                 output_res = output.detach().cpu().numpy()
@@ -528,23 +527,9 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
                     heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
 
             # sum up batch loss
-            if model.config.C == 2:
-                c_probs = (output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
-                c_probs = c_probs.gather(1, target.reshape(-1, 1)).flatten()
-                if training_dataset != 'cifar100':
-                    loss_ce += criterion(c_probs, target.float()).item()
-            else:
-                if training_dataset != 'cifar100':
-                    loss_ce += criterion(output, target).item()
-
-            data_ll.extend(torch.logsumexp(output, dim=1).detach().cpu().numpy())
-            data_ll_unsup.extend(output.max(dim=1)[0].detach().cpu().numpy())
             if training_dataset != 'cifar100':
-                data_ll_super.extend(output.gather(1, target.reshape(-1, 1)).squeeze().detach().cpu().numpy())
-            class_probs[batch_index * test_loader.batch_size: (batch_index + 1) * test_loader.batch_size, :] = (
-                        output - torch.logsumexp(output, dim=1, keepdims=True)).exp()
+                loss += criterion(output, target).item()
 
-            loss_nll += -output.sum()
             pred = output.argmax(dim=1)
             correct += (pred == target).sum().item()
 
@@ -555,41 +540,36 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         fold = 'train'
     else:
         fold = 'test'
-    np.save(d + 'output_{}_{}_{}_{}_{}_{}'.format(
-        training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction), output_res)
+    np.save(d + 'output_{}_{}_{}_{}_{}'.format(
+        training_dataset, fold, dropout_inference, rotation, ll_correction), output_res)
     if dropout_inference > 0.0:
-        np.save(d + 'var_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+        np.save(d + 'var_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_inference, rotation, ll_correction),
                 var_res)
-        np.save(d + 'll_x_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+        np.save(d + 'll_x_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_inference, rotation, ll_correction),
                 ll_x_res)
-        np.save(d + 'var_x_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+        np.save(d + 'var_x_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_inference, rotation, ll_correction),
                 var_x_res)
-        np.save(d + 'heads_x_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+        np.save(d + 'heads_x_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_inference, rotation, ll_correction),
                 root_heads_res)
-        np.save(d + 'heads_vars_{}_{}_{}_{}_{}_{}'.format(
-            training_dataset, fold, dropout_learning, dropout_inference, rotation, ll_correction),
+        np.save(d + 'heads_vars_{}_{}_{}_{}_{}'.format(
+            training_dataset, fold, dropout_inference, rotation, ll_correction),
                 heads_vars_res)
 
-    loss_ce /= len(test_loader.dataset)
-    loss_nll /= len(test_loader.dataset) + get_data_flatten_shape(test_loader)[1]
+    loss /= len(test_loader.dataset)
     accuracy = 100.0 * correct / len(test_loader.dataset)
 
-    output_string = "{} set: Average loss_ce: {:.4f} Average loss_nll: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
-        tag, loss_ce, loss_nll, correct, len(test_loader.dataset), accuracy
+    output_string = "{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
+        tag, loss, correct, len(test_loader.dataset), accuracy
     )
     print(output_string)
     with open(d + 'training.out', 'a') as writer:
         writer.write(output_string + "\n")
-    assert len(data_ll) == get_data_flatten_shape(test_loader)[0]
-    if training_dataset != 'cifar100':
-        assert len(data_ll_super) == get_data_flatten_shape(test_loader)[0]
-    assert len(data_ll_unsup) == get_data_flatten_shape(test_loader)[0]
 
-    return model
+    return model, output_res, var_res
 
 
 def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist', eval_every_n_epochs=5, lr=1e-3):
@@ -637,9 +617,6 @@ def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist
     print("Learning rate: {}".format(lr))
 
     log_interval = 100
-
-    # training_string = ""
-
     d_results = d + "results/"
     d_model = d + "model/"
     ensure_dir(d_results)
@@ -715,6 +692,8 @@ def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist
 
     evaluate_model(model, device, train_loader, "Train", output_dir=d)
     evaluate_model(model, device, test_loader, "Test", output_dir=d)
+
+    return model
 
 
 def evaluate_model(model: torch.nn.Module, device, loader, tag, output_dir="") -> float:
@@ -799,7 +778,20 @@ if __name__ == "__main__":
     SVHN_DIR = '../data'
     CORRUPTED_SVHN_DIR = ''
 
-    run_torch(n_epochs=100, batch_size=200, dropout=0.2, training_dataset='mnist')
     # learn and save a model
+    dc = run_torch(n_epochs=20, batch_size=200, dropout=0.2, training_dataset='mnist', eval_every_n_epochs=5, lr=0.01)
+
     # run inference
+    rotations = [rot for rot in range(0, 95, 5)]
+
+    results = {}
+
+    for rotation in rotations:
+        dc, class_probs, vars = test_closed_form(model_dir='', training_dataset='mnist', dropout_inference=0.2,
+                                                 batch_size=100, rotation=rotation, model=dc, eval_train_set=False)
+        results[rotation] = (class_probs, vars)
+    # breakpoint()
+
+    from fig_rotated_mnist import plot_figure
+    plot_figure(results, rotations)
 

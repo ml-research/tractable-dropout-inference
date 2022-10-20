@@ -121,7 +121,7 @@ class Sum(AbstractLayer):
         # Multiply (add in log-space) input features and weights
         log_probs = x + logweights  # Shape: [n, d, ic, oc, r]
 
-        if test_dropout or dropout_inference > 0.0 or dropout_cf:
+        if test_dropout and dropout_inference > 0.0 and dropout_cf:
             log_q = np.log(1 - dropout_inference)
             log_p = np.log(dropout_inference)
 
