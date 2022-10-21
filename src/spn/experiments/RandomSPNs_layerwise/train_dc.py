@@ -16,6 +16,7 @@ from spn.experiments.RandomSPNs_layerwise.rat_spn import RatSpn, RatSpnConfig
 from torch.utils.data import Dataset, ConcatDataset
 from PIL import Image
 import datetime
+import scipy
 
 from fig_rotated_mnist import plot_figure
 
@@ -398,9 +399,6 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20,
                             model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
                     else:
                         output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
-                        # normalize output in log space when dropout is not applied at inference time
-                        output = output - np.repeat(
-                            output.special.logsumexp(output, axis=1).reshape(-1, 1), 10, axis=1)
 
                     if batch_index == 0:
                         output_res = output.detach().cpu().numpy()
@@ -410,14 +408,24 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20,
                             var_x_res = var_x.detach().cpu().numpy().flatten()
                             root_heads_res = root_heads.detach().cpu().numpy()
                             heads_vars_res = heads_vars.detach().cpu().numpy()
+                        else:
+                            # normalize output in log space when dropout is not applied at inference time
+                            output_res = output_res - np.repeat(
+                                scipy.special.logsumexp(output_res, axis=1).reshape(-1, 1), 10, axis=1)
                     else:
-                        output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
                         if dropout_inference > 0.0:
+                            output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
                             var_res = np.concatenate((var_res, vars.detach().cpu().numpy()))
                             ll_x_res = np.concatenate((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
                             var_x_res = np.concatenate((var_x_res, var_x.detach().cpu().numpy().flatten()))
                             root_heads_res = np.concatenate((root_heads_res, root_heads.detach().cpu().numpy()))
                             heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
+                        else:
+                            output_tmp = output.detach().cpu().numpy()
+                            # normalize output in log space when dropout is not applied at inference time
+                            output_tmp = output_tmp - np.repeat(
+                                scipy.special.logsumexp(output_tmp, axis=1).reshape(-1, 1), 10, axis=1)
+                            output_res = np.concatenate((output_res, output_tmp))
 
                     if class_label:
                         n_correct += (output.argmax(dim=1) == class_label).sum()
@@ -476,9 +484,8 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         device = torch.device("cuda")
         model.to(device)
 
-    tag = "Testing closed-form dropout: "
+    tag = "Testing closed-form dropout "
 
-    loss = 0
     correct = 0
 
     if rotation is not None:
@@ -507,9 +514,6 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
                           ll_correction=ll_correction)
             else:
                 output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
-                # normalize output in log space when dropout is not applied at inference time
-                output = output - np.repeat(
-                    output.special.logsumexp(output, axis=1).reshape(-1, 1), 10, axis=1)
 
             if batch_index == 0:
                 output_res = output.detach().cpu().numpy()
@@ -519,18 +523,25 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
                     var_x_res = var_x.detach().cpu().numpy().flatten()
                     root_heads_res = root_heads.detach().cpu().numpy()
                     heads_vars_res = heads_vars.detach().cpu().numpy()
+                else:
+                    # normalize output in log space when dropout is not applied at inference time
+                    output_res = output_res - np.repeat(
+                        scipy.special.logsumexp(output_res, axis=1).reshape(-1, 1), 10, axis=1)
+
             else:
-                output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
                 if dropout_inference > 0.0:
+                    output_res = np.concatenate((output_res, output.detach().cpu().numpy()))
                     var_res = np.concatenate((var_res, stds.detach().cpu().numpy()))
                     ll_x_res = np.concatenate((ll_x_res, ll_x.detach().cpu().numpy().flatten()))
                     var_x_res = np.concatenate((var_x_res, var_x.detach().cpu().numpy().flatten()))
                     root_heads_res = np.concatenate((root_heads_res, root_heads.detach().cpu().numpy()))
                     heads_vars_res = np.concatenate((heads_vars_res, heads_vars.detach().cpu().numpy()))
-
-            # sum up batch loss
-            if training_dataset != 'cifar100':
-                loss += criterion(output, target).item()
+                else:
+                    output_tmp = output.detach().cpu().numpy()
+                    # normalize output in log space when dropout is not applied at inference time
+                    output_tmp = output_tmp - np.repeat(
+                        scipy.special.logsumexp(output_tmp, axis=1).reshape(-1, 1), 10, axis=1)
+                    output_res = np.concatenate((output_res, output_tmp))
 
             pred = output.argmax(dim=1)
             correct += (pred == target).sum().item()
@@ -561,16 +572,17 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             training_dataset, fold, dropout_inference, rotation, ll_correction),
                 heads_vars_res)
 
-    loss /= len(test_loader.dataset)
     accuracy = 100.0 * correct / len(test_loader.dataset)
 
-    output_string = "{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
-        tag, loss, correct, len(test_loader.dataset), accuracy
+    output_string = "{} -- Accuracy: {}/{} ({:.0f}%)".format(
+        tag, correct, len(test_loader.dataset), accuracy
     )
     print(output_string)
     with open(d + 'training.out', 'a') as writer:
         writer.write(output_string + "\n")
 
+    if dropout_inference == 0.0:
+        var_res = []
     return model, output_res, var_res
 
 
@@ -773,11 +785,19 @@ if __name__ == "__main__":
     torch.cuda.benchmark = True
     set_seed(0)
 
-    LSUN_DIR = '/media/data/lsun_full/lsun'
-    CIFAR10_DIR = '../data'
-    CIFAR100_DIR = '../data'
-    CINIC_DIR = '/media/data/data/cinic'
-    SVHN_DIR = '../data'
+    # data set directories
+    LSUN_DIR = ''
+    CIFAR10_DIR = ''
+    CIFAR100_DIR = ''
+    CINIC_DIR = ''
+    SVHN_DIR = ''
+
+    # To run experiments on the corrupted SVHN data, follow the documentation of the
+    # Python package "imagecorruptions and Hendrycks et al., ICLR 2019 (https://openreview.net/forum?id=HJz6tiCqYm)
+    # To generate the corrupted images save them as NumPy tensors with the following file name
+    # 'svhn_test_<CORRUPTION_NAME>_l<SEVERITY>_labels.npy' in the CORRUPTED_SVHN_DIR
+    # directory. Once having a model trained on SVHN, one can use the method evaluate_corrupted_svhn_cf()
+    # to perform inference with SVHN corrupted data on a dropout circuit.
     CORRUPTED_SVHN_DIR = ''
 
     # learn and save a model
