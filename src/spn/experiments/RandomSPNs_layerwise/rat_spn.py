@@ -148,7 +148,7 @@ class RatSpn(nn.Module):
         return x
 
     def _forward_cf(self, x: torch.Tensor, dropout_inference, ll_correction=False):
-        x, vars = self._leaf(x, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+        x, vars = self._leaf(x, dropout_inference=dropout_inference, dropout_cf=True)
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
 
@@ -165,7 +165,7 @@ class RatSpn(nn.Module):
 
         # Apply C sum node outputs
         # do not apply dropout at the root node but propagate uncertainty estimations
-        x, vars = self.root(x, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False, vars=vars)
+        x, vars = self.root(x, dropout_inference=dropout_inference, dropout_cf=False, vars=vars)
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
 
@@ -250,17 +250,17 @@ class RatSpn(nn.Module):
 
     def _forward_layers_cf(self, x, vars, dropout_inference=0.0, ll_correction=False):
         for layer in self._inner_layers:
-            x, vars = layer(x, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True, vars=vars,
+            x, vars = layer(x, dropout_inference=dropout_inference, dropout_cf=True, vars=vars,
                             ll_correction=ll_correction)
         return x, vars
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, ll_correction=False) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False,
+                ll_correction=False) -> torch.Tensor:
         """
         Forward pass through RatSpn. Computes the conditional log-likelihood P(X | C).
 
         Args:
             x: Input.
-            test_dropout: Whether to use dropout at inference time.
             dropout_inference: The dropout p parameter to use at inference time.
             dropout_cf: Whether to use the closed-form dropout at inference time.
 
@@ -270,15 +270,14 @@ class RatSpn(nn.Module):
         # Apply feature randomization for each repetition
         x = self._randomize(x)
 
-        if test_dropout and dropout_cf:
+        if dropout_cf:
             return self._forward_cf(x, dropout_inference, ll_correction)
 
         # Apply leaf distributions
-        x = self._leaf(x, test_dropout=False, dropout_inference=0.0, dropout_cf=dropout_cf)
+        x = self._leaf(x, dropout_inference=0.0, dropout_cf=dropout_cf)
 
         # Pass through intermediate layers
-        x = self._forward_layers(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
-
+        x = self._forward_layers(x, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
 
         # Merge results from the different repetitions into the channel dimension
         n, d, c, r = x.size()
@@ -297,14 +296,12 @@ class RatSpn(nn.Module):
         return x
 
 
-
-    def _forward_layers(self, x, test_dropout=False, dropout_inference=0.0, dropout_cf=False):
+    def _forward_layers(self, x, dropout_inference=0.0, dropout_cf=False):
         """
         Forward pass through the inner sum and product layers.
 
         Args:
             x: Input.
-            test_dropout: Whether to use dropout at inference time.
             dropout_inference: The dropout p parameter to use at inference time.
             dropout_cf: Whether to use the closed-form dropout at inference time.
 
@@ -313,7 +310,7 @@ class RatSpn(nn.Module):
         """
         # Forward to inner product and sum layers
         for layer in self._inner_layers:
-            x = layer(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
+            x = layer(x, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
         return x
 
     def _build(self):

@@ -22,8 +22,10 @@ from fig_rotated_mnist import plot_figure
 
 
 class CustomTensorDataset(Dataset):
-    """TensorDataset with support of transforms.
     """
+    TensorDataset with support of transforms.
+    """
+
     def __init__(self, tensors, transform=None):
         assert all(tensors[0].shape[0] == tensor.shape[0] for tensor in tensors)
         self.tensors = tensors
@@ -48,7 +50,7 @@ class CustomTensorDataset(Dataset):
 
 def time_delta_now(t_start: float) -> str:
     """
-    Convert a timestamp into a human readable timestring.
+    Convert a timestamp into a human-readable timestring.
     Args:
         t_start (float): Timestamp.
 
@@ -68,7 +70,7 @@ def time_delta_now(t_start: float) -> str:
 
 def count_params(model: torch.nn.Module) -> int:
     """
-    Count the number of parameters in a modinference
+    Count the number of parameters in a model
 
     Args:
         model (torch.nn.Module): PyTorch model.
@@ -129,7 +131,7 @@ def get_lsun_loaders(use_cuda, batch_size):
 
     lsun_transformer = transforms.Compose([transforms.Resize((32, 32)), transforms.ToTensor(),
                                            transforms.Normalize(mean=lsun_mean, std=lsun_std),
-                                          ])
+                                           ])
 
     lsun_train_loader = torch.utils.data.DataLoader(
         datasets.LSUN(root=LSUN_DIR, classes=[lc + '_train' for lc in lsun_classes],
@@ -159,7 +161,7 @@ def get_lsun_loaders(use_cuda, batch_size):
 
 def get_cifar_loaders(use_cuda, batch_size):
     """
-    Get the CIFAR10 pytorch data loader.
+    Get the CIFAR-10 pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
@@ -185,38 +187,9 @@ def get_cifar_loaders(use_cuda, batch_size):
     return cifar10_train_loader, cifar10_test_loader
 
 
-def get_cinic_loaders(use_cuda, batch_size):
-    """
-    Get the CINIC pytorch data loader.
-
-    Args:
-        use_cuda: Use cuda flag.
-        batch_size: The size of the batch.
-
-    """
-    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
-
-    cinic_mean = [0.47889522, 0.47227842, 0.43047404]
-    cinic_std = [0.24205776, 0.23828046, 0.25874835]
-
-    cinic_transformer = transforms.Compose([transforms.ToTensor(),
-                        transforms.Normalize(mean=cinic_mean,
-                                             std=cinic_std)])
-
-    cinic_train = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(CINIC_DIR + '/train',
-                                                                               transform=cinic_transformer),
-                                              batch_size=batch_size, shuffle=True, **kwargs)
-
-    cinic_test = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(CINIC_DIR + '/test',
-                                                                              transform=cinic_transformer),
-                                             batch_size=batch_size, shuffle=True, **kwargs)
-
-    return cinic_train, cinic_test
-
-
 def get_cifar100_loaders(use_cuda, batch_size):
     """
-    Get the CIFAR100 pytorch data loader.
+    Get the CIFAR-100 pytorch data loader.
 
     Args:
         use_cuda: Use cuda flag.
@@ -243,6 +216,35 @@ def get_cifar100_loaders(use_cuda, batch_size):
     return cifar100_train_loader, cifar100_test_loader
 
 
+def get_cinic_loaders(use_cuda, batch_size):
+    """
+    Get the CINIC pytorch data loader.
+
+    Args:
+        use_cuda: Use cuda flag.
+        batch_size: The size of the batch.
+
+    """
+    kwargs = {"num_workers": 8, "pin_memory": True} if use_cuda else {}
+
+    cinic_mean = [0.47889522, 0.47227842, 0.43047404]
+    cinic_std = [0.24205776, 0.23828046, 0.25874835]
+
+    cinic_transformer = transforms.Compose([transforms.ToTensor(),
+                                            transforms.Normalize(mean=cinic_mean,
+                                                                 std=cinic_std)])
+
+    cinic_train = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(CINIC_DIR + '/train',
+                                                                               transform=cinic_transformer),
+                                              batch_size=batch_size, shuffle=True, **kwargs)
+
+    cinic_test = torch.utils.data.DataLoader(torchvision.datasets.ImageFolder(CINIC_DIR + '/test',
+                                                                              transform=cinic_transformer),
+                                             batch_size=batch_size, shuffle=True, **kwargs)
+
+    return cinic_train, cinic_test
+
+
 def get_svhn_loaders(use_cuda, batch_size, add_extra=True):
     """
     Get the SVHN pytorch data loader.
@@ -260,8 +262,8 @@ def get_svhn_loaders(use_cuda, batch_size, add_extra=True):
     if add_extra:
         train_dataset = ConcatDataset([datasets.SVHN(
             root='../data', split='train', download=True, transform=svhn_transformer),
-                                       datasets.SVHN(
-                                           root=SVHN_DIR, split='extra', download=True, transform=svhn_transformer)])
+            datasets.SVHN(
+                root=SVHN_DIR, split='extra', download=True, transform=svhn_transformer)])
     else:
         train_dataset = datasets.SVHN(root=SVHN_DIR, split='train', download=True, transform=svhn_transformer)
 
@@ -283,6 +285,14 @@ def get_svhn_loaders(use_cuda, batch_size, add_extra=True):
 
 
 def get_data_loaders(use_cuda, batch_size, dataset='mnist'):
+    """
+    Get the data loaders for a specific dataset.
+
+    Args:
+        use_cuda: Use cuda flag.
+        batch_size: The size of the batch.
+        dataset: The dataset of the corresponding data loaders.
+    """
     if dataset == 'mnist':
         return get_mnist_loaders(use_cuda, batch_size)
     elif dataset == 'cifar':
@@ -298,19 +308,38 @@ def get_data_loaders(use_cuda, batch_size, dataset='mnist'):
 
 
 def get_data_flatten_shape(data_loader):
+    """
+    Get the flattened data shape of data loader's dataset.
+
+    Args:
+        data_loader: The data loader.
+    """
     if isinstance(data_loader.dataset, ConcatDataset):
         return (data_loader.dataset.cumulative_sizes[-1],
                 torch.prod(torch.tensor(data_loader.dataset.datasets[0].data.shape[1:])).int().item())
     if 'lsun' in data_loader.dataset.root:
-        return data_loader.dataset.length, 3*32*32
+        return data_loader.dataset.length, 3 * 32 * 32
     if isinstance(data_loader.dataset, torchvision.datasets.ImageFolder):
-        return len(data_loader.dataset), 3*32*32
+        return len(data_loader.dataset), 3 * 32 * 32
     return (data_loader.dataset.data.shape[0],
             torch.prod(torch.tensor(data_loader.dataset.data.shape[1:])).int().item())
 
 
 def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10, leaf_distribution=RatNormal) -> RatSpn:
-    """Construct the RatSpn"""
+    """
+    Construct the RatSpn. See Peharz et al., UAI 2019 (http://proceedings.mlr.press/v115/peharz20a/peharz20a.pdf).
+
+    Args:
+        S: The number of sum nodes in a sum region.
+        I: The number of input distributions at leaves.
+        R: The number of replicas.
+        D: The depth in number of layers.
+        dropout: The dropout parameter to apply during training.
+        device: The device where to put the model.
+        F: The number of data features.
+        C: The number of classes i.e. the root heads.
+        leaf_distribution: The type of leaf distributions.
+    """
 
     # Setup RatSpnConfig
     config = RatSpnConfig()
@@ -333,15 +362,28 @@ def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10, leaf_distribution=Rat
     return model
 
 
-def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20, rat_I=20, rat_D=5, rat_R=5,
-                               corrupted_svhn_dir='', model=None, class_label=None):
-
+def evaluate_corrupted_svhn_tdi(model_dir=None, dropout_inference=None, rat_S=20, rat_I=20, rat_D=5, rat_R=5,
+                                corrupted_svhn_dir='', model=None, class_label=None):
+    """
+    Evaluate the corrupted SVHN images with Tractable Dropout Inference on a given probabilistic circuit (SPN).
+    Args:
+        model_dir: The directory where the model is stored.
+        dropout_inference: The dropout p parameter for the Tractable Dropout Inference.
+        rat_S: The number of sum nodes in a sum region of the SPN.
+        rat_I: The number of input leaf distributions.
+        rat_D: The depth of the SPN.
+        rat_R: The number of replicas.
+        corrupted_svhn_dir: The directory where the corrupted SVHN images are stored.
+        model: An already loaded model to evaluate (optional).
+        class_label: The class label of the data on which we want to perform the evaluation, if None the evaluation
+        is performed over the whole dataset.
+    """
     from imagecorruptions import get_corruption_names
 
     device = sys.argv[1]
     torch.cuda.benchmark = True
 
-    d = model_dir + "closed_form/svhn_c/cf_p_{}/".format(str(dropout_inference).replace('.', ''))
+    d = model_dir + "tdi/svhn_c/tdi_p_{}/".format(str(dropout_inference).replace('.', ''))
     ensure_dir(d)
     n_features = 3 * 32 * 32
     leaves = RatNormal
@@ -396,9 +438,9 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20,
 
                     if dropout_inference > 0.0:
                         output, vars, ll_x, var_x, root_heads, heads_vars = \
-                            model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True)
+                            model(data, dropout_inference=dropout_inference, dropout_cf=True)
                     else:
-                        output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
+                        output = model(data, dropout_inference=dropout_inference, dropout_cf=False)
 
                     if batch_index == 0:
                         output_res = output.detach().cpu().numpy()
@@ -455,15 +497,31 @@ def evaluate_corrupted_svhn_cf(model_dir=None, dropout_inference=None, rat_S=20,
     return model
 
 
-def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
-                    rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None, eval_train_set=False,
-                    ll_correction=False):
-
+def test_tdi(model_dir=None, training_dataset=None, dropout_inference=None, batch_size=20,
+             rat_S=20, rat_I=20, rat_D=5, rat_R=5, rotation=None, model=None, eval_train_set=False,
+             ll_correction=False):
+    """
+    Perform inference with Tractable Dropout Inference.
+    Args:
+        model_dir: The directory where the model is stored.
+        training_dataset: The dataset used to train the model.
+        dropout_inference: The dropout p parameter for the Tractable Dropout Inference, if 0 it performs.
+        the conventional probabilistic inference.
+        batch_size: The batch size.
+        rat_S: The number of sum nodes in a sum region of the SPN.
+        rat_I: The number of input leaf distributions.
+        rat_D: The depth of the SPN.
+        rat_R: The number of replicas.
+        rotation: The degrees of the rotation to apply to the image.
+        model: An already loaded model to evaluate (optional).
+        eval_train_set: If True, it evaluates the model with TDI on the training dataset.
+        ll_correction: If True it applies the likelihood correction.
+    """
     device = sys.argv[1]
     use_cuda = True
     torch.cuda.benchmark = True
 
-    d = model_dir + "closed_form/"
+    d = model_dir + "tdi/"
     ensure_dir(d)
     train_loader, test_loader = get_data_loaders(use_cuda, batch_size=batch_size, dataset=training_dataset)
     if eval_train_set:
@@ -484,7 +542,7 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
         device = torch.device("cuda")
         model.to(device)
 
-    tag = "Testing closed-form dropout "
+    tag = "Testing Tractable Dropout Inference."
 
     correct = 0
 
@@ -495,8 +553,6 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             print("Performing inference with rotation of {} degrees...".format(rotation))
         else:
             raise NotImplementedError()
-
-    criterion = nn.CrossEntropyLoss(reduction="sum")
 
     with torch.no_grad():
         t_start = time.time()
@@ -509,11 +565,11 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
             data = data.view(data.shape[0], -1)
 
             if dropout_inference > 0.0:
-                output, stds, ll_x, var_x, root_heads, heads_vars =\
-                    model(data, test_dropout=True, dropout_inference=dropout_inference, dropout_cf=True,
+                output, stds, ll_x, var_x, root_heads, heads_vars = \
+                    model(data, dropout_inference=dropout_inference, dropout_cf=True,
                           ll_correction=ll_correction)
             else:
-                output = model(data, test_dropout=False, dropout_inference=dropout_inference, dropout_cf=False)
+                output = model(data, dropout_inference=dropout_inference, dropout_cf=False)
 
             if batch_index == 0:
                 output_res = output.detach().cpu().numpy()
@@ -587,18 +643,19 @@ def test_closed_form(model_dir=None, training_dataset=None, dropout_inference=No
 
 
 def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist', eval_every_n_epochs=5, lr=1e-3):
-    """Run the torch code.
+    """
+    Run the probabilistic circuit training with PyTorch.
 
     Args:
-        n_epochs (int, optional): Number of epochs.
-        batch_size (int, optional): Batch size.
-        dropout (int, optional): Dropout p parameter during training.
-        training_dataset (str, optional): Dataset name to be used for training.
-        eval_every_n_epochs (int, optional): Interval of epochs before evaluating the model during training.
-        lr (float, optional): Learning rate.
+        n_epochs (int, optional): Number of epochs for model training.
+        batch_size (int, optional): The batch size.
+        dropout (float, optional): The dropout p parameter during training.
+        training_dataset (str, optional): The name of the dataset to be used for training.
+        eval_every_n_epochs (int, optional): The interval of epochs before evaluating the model during training.
+        lr (float, optional): The learning rate.
     """
 
-    assert len(sys.argv) == 2, "Usage: train.mnist cuda/cpu"
+    assert len(sys.argv) == 2, "Usage: train_pc.py cuda/cpu"
     dev = sys.argv[1]
 
     if dev == "cpu":
@@ -643,7 +700,7 @@ def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist
 
         for batch_index, (data, target) in enumerate(train_loader):
 
-            # Send data to correct device
+            # Send data to the correct device
             data, target = data.to(device), target.to(device)
             data = data.view(data.shape[0], -1)
 
@@ -681,10 +738,10 @@ def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist
         t_delta = time_delta_now(t_start)
         print("Train Epoch {} took {}".format(epoch, t_delta))
 
-        if epoch % eval_every_n_epochs == (eval_every_n_epochs-1):
+        if epoch % eval_every_n_epochs == (eval_every_n_epochs - 1):
             print("Evaluating model...")
-            evaluate_model(model, device,train_loader, "{}^ epoch - Train".format(epoch+1), output_dir=d)
-            evaluate_model(model, device, test_loader, "{}^ epoch - Test".format(epoch+1), output_dir=d)
+            evaluate_model(model, device, train_loader, "{}^ epoch - Train".format(epoch + 1), output_dir=d)
+            evaluate_model(model, device, test_loader, "{}^ epoch - Test".format(epoch + 1), output_dir=d)
 
             print('Saving model... epoch {}'.format(epoch))
             torch.save({
@@ -712,10 +769,10 @@ def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist
 
 def evaluate_model(model: torch.nn.Module, device, loader, tag, output_dir="") -> float:
     """
-    Description for method evaluate_model.
+    Evaluate the model.
 
     Args:
-        model (nn.Module): PyTorch module.
+        model (nn.Module): The model to evalaute.
         device: Execution device.
         loader: Data loader.
         tag (str): Tag for information.
@@ -745,7 +802,7 @@ def evaluate_model(model: torch.nn.Module, device, loader, tag, output_dir="") -
     accuracy = 100.0 * correct / len(loader.dataset)
 
     output_string = "{} set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)".format(
-            tag, loss, correct, len(loader.dataset), accuracy
+        tag, loss, correct, len(loader.dataset), accuracy
     )
     print(output_string)
     with open(output_dir + 'training.out', 'a') as writer:
@@ -793,15 +850,15 @@ if __name__ == "__main__":
     SVHN_DIR = ''
 
     # To run experiments on the corrupted SVHN data, follow the documentation of the
-    # Python package "imagecorruptions and Hendrycks et al., ICLR 2019 (https://openreview.net/forum?id=HJz6tiCqYm)
+    # Python package "imagecorruptions" and Hendrycks et al., ICLR 2019 (https://openreview.net/forum?id=HJz6tiCqYm)
     # To generate the corrupted images save them as NumPy tensors with the following file name
     # 'svhn_test_<CORRUPTION_NAME>_l<SEVERITY>_labels.npy' in the CORRUPTED_SVHN_DIR
-    # directory. Once having a model trained on SVHN, one can use the method evaluate_corrupted_svhn_cf()
-    # to perform inference with SVHN corrupted data on a dropout circuit.
+    # directory. Once having a model trained on SVHN, one can use the method evaluate_corrupted_svhn_tdi()
+    # to perform Tractable Dropout Inference with SVHN corrupted data.
     CORRUPTED_SVHN_DIR = ''
 
     # learn and save a model
-    dc = run_torch(n_epochs=20, batch_size=200, dropout=0.2, training_dataset='mnist', eval_every_n_epochs=5, lr=0.01)
+    pc = run_torch(n_epochs=20, batch_size=200, dropout=0.2, training_dataset='mnist', eval_every_n_epochs=5, lr=0.01)
 
     # run inference
     rotations = [rot for rot in range(0, 95, 5)]
@@ -809,9 +866,8 @@ if __name__ == "__main__":
     results = {}
 
     for rotation in rotations:
-        dc, class_probs, vars = test_closed_form(model_dir='', training_dataset='mnist', dropout_inference=0.2,
-                                                 batch_size=100, rotation=rotation, model=dc, eval_train_set=False)
+        pc, class_probs, vars = test_tdi(model_dir='', training_dataset='mnist', dropout_inference=0.2,
+                                         batch_size=100, rotation=rotation, model=pc, eval_train_set=False)
         results[rotation] = (class_probs, vars)
 
     plot_figure(results, rotations)
-

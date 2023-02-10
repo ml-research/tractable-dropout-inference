@@ -119,12 +119,12 @@ class IndependentMultivariate(Leaf):
         if isinstance(self.base_leaf, RatNormal):
             truncated_normal_(self.base_leaf.stds, std=0.5)
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False):
+    def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False):
         # Pass through base leaf
-        x = self.base_leaf(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
+        x = self.base_leaf(x, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
 
         if self._pad:
-            if test_dropout and dropout_cf:
+            if dropout_cf:
                 # Pad marginalized node
                 log_exps = F.pad(x[0], pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
                 log_vars = F.pad(x[1], pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
@@ -134,7 +134,7 @@ class IndependentMultivariate(Leaf):
                 x = F.pad(x, pad=[0, 0, 0, 0, 0, self._pad], mode="constant", value=0.0)
 
         # Pass through product layer
-        x = self.prod(x, test_dropout=test_dropout, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
+        x = self.prod(x, dropout_inference=dropout_inference, dropout_cf=dropout_cf)
         if dropout_cf:
             assert x[0].isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
             assert x[1].isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"

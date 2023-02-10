@@ -81,14 +81,13 @@ class Sum(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.weights.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None,
+    def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False, vars=None,
                 ll_correction=False):
         """
         Sum layer foward pass.
 
         Args:
             x: Input of shape [batch, in_features, in_channels].
-            test_dropout (bool, optional): Whether to use dropout at inference time.
             dropout_inference (float, optional): The dropout p parameter to use at inference time.
             dropout_cf (bool, optional): Whether to use the closed-form dropout at inference time.
             vars: The variance, input from the bottom layer.
@@ -121,14 +120,14 @@ class Sum(AbstractLayer):
         # Multiply (add in log-space) input features and weights
         log_probs = x + logweights  # Shape: [n, d, ic, oc, r]
 
-        if test_dropout and dropout_inference > 0.0 and dropout_cf:
+        if dropout_inference > 0.0 and dropout_cf:
             log_q = np.log(1 - dropout_inference)
             log_p = np.log(dropout_inference)
 
         # Compute sum via logsumexp along in_channels dimension
         log_probs = torch.logsumexp(log_probs, dim=2)  # Shape: [n, d, oc, r] #
 
-        if ll_correction and test_dropout and dropout_inference > 0.0 and dropout_cf:
+        if ll_correction and dropout_inference > 0.0 and dropout_cf:
             log_probs += log_q
 
         # Assert correct dimensions
@@ -324,13 +323,14 @@ class Product(AbstractLayer):
         return result, torch.zeros_like(result).log()
 
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None,
-                ll_correction=False):
+    def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False):
         """
         Product layer forward pass.
 
         Args:
             x: Input of shape [batch, in_features, channel].
+            dropout_inference (float, optional): The dropout parameter p to use when performing inference.
+            dropout_cf: (bool, optional) whether to apply the closed-form dropout at inference (TDI).
 
         Returns:
             torch.Tensor: Output of shape [batch, ceil(in_features/cardinality), channel].
@@ -365,7 +365,8 @@ class Product(AbstractLayer):
         return result
 
     def sample(self, n: int = None, context: SamplingContext = None) -> SamplingContext:
-        """Method to sample from this layer, based on the parents output.
+        """
+        Method to sample from this layer, based on the parents output.
 
         Args:
             n (int): Number of instances to sample.
@@ -465,13 +466,14 @@ class CrossProduct(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.unraveled_channel_indices.device
 
-    def forward(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0, dropout_cf=False, vars=None,
-                ll_correction=False):
+    def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False, vars=None):
         """
         Product layer forward pass.
 
         Args:
             x: Input of shape [batch, in_features, channel].
+            vars: The variances obtained as input from the previous layer.
+            dropout_cf: (bool) whether to apply the closed-form dropout during inference
 
         Returns:
             torch.Tensor: Output of shape [batch, ceil(in_features/2), channel * channel].

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from typing import Tuple
 import itertools
-from tueplots.bundles import aistats2023
+from tueplots.bundles import uai2023
 import torchvision
 import matplotlib
 import matplotlib.pyplot as plt
@@ -47,9 +47,11 @@ def setup(use_pgf: bool):
 
 
 def get_figsize(scale=1.0, aspect_ratio=(5.0**0.5 - 1.0) / 2.0, num_columns=1) -> Tuple[float, float]:
-    """Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex."""
+    """
+    Compute the figure size based on the latex template textwidth in pt. Print via '\the\textwidth' in latex.
+    """
     # Compute optimal figure sizes
-    columnwidth_pt = 234.8775  # AISTATS23 columnwidth in pt
+    columnwidth_pt = 234.8775  # UAI23 columnwidth in pt
     textwidth = columnwidth_pt / 72  # pt to inch
     aspect_ratio *= num_columns
     scale = scale / num_columns
@@ -68,7 +70,6 @@ def entropy(data: np.ndarray, axis=-1) -> np.ndarray:
 
 
 def plot_figure(data, rotations):
-
     plt.style.use(["science", "grid"])
 
     use_markers = True
@@ -82,10 +83,10 @@ def plot_figure(data, rotations):
         alpha = 1.0
         markers = [None, None]
 
-    # Use tueplots aistats2023 template
-    with matplotlib.rc_context(aistats2023()):
+    # Use tueplots uai2023 template
+    with matplotlib.rc_context(uai2023()):
 
-        labels = {"dc": "Dropout circuit"}
+        labels = {"tdi": "PC + TDI"}
 
         mnist_targets = get_mnist_labels()
         mnist_targets = mnist_targets[:, None].repeat(len(rotations), axis=1)
@@ -117,7 +118,7 @@ def plot_figure(data, rotations):
             rotations,
             y,
             marker=markers[1],
-            label=labels["dc"],
+            label=labels["tdi"],
             markersize=markersize,
             markeredgecolor="black",
             markeredgewidth=0.5,
@@ -133,7 +134,7 @@ def plot_figure(data, rotations):
             accuracy,
             "--",
             marker=markers[1],
-            label=labels["dc"],
+            label=labels["tdi"],
             markersize=markersize,
             markeredgecolor="black",
             markeredgewidth=0.5,
@@ -152,17 +153,17 @@ def plot_figure(data, rotations):
         ##############################
         # Plot std on second subplot #
         ##############################
-        pred_idx_dc = np.argmax(data_dict["confs"], axis=2)
+        pred_idx_tdi = np.argmax(data_dict["confs"], axis=2)
         vars = data_dict["vars"]
         stds = np.sqrt(vars)
-        stds = np.take_along_axis(stds, pred_idx_dc[:, None, :], axis=1)[:, 0, :]
+        stds = np.take_along_axis(stds, pred_idx_tdi[:, None, :], axis=1)[:, 0, :]
         stds = np.median(stds, axis=0)
 
         ax1.plot(
             rotations,
             stds,
             marker=markers[1],
-            label=labels["dc"],
+            label=labels["tdi"],
             markersize=markersize,
             markeredgecolor="black",
             markeredgewidth=0.5,

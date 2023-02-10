@@ -137,7 +137,7 @@ class Leaf(AbstractLayer):
         # Dropout bernoulli
         self._bernoulli_dist = torch.distributions.Bernoulli(probs=self.dropout)
 
-    def _apply_dropout(self, x: torch.Tensor, test_dropout=False, dropout_inference=0.0) -> torch.Tensor:
+    def _apply_dropout(self, x: torch.Tensor) -> torch.Tensor:
         # Apply dropout sampled from a bernoulli during training (model.train() has been called)
         if self.dropout > 0.0 and self.training:
             dropout_indices = self._bernoulli_dist.sample(x.shape).bool()
@@ -149,16 +149,16 @@ class Leaf(AbstractLayer):
         x = torch.where(~torch.isnan(x), x, self.marginalization_constant)
         return x
 
-    def forward(self, x, test_dropout=False, dropout_inference=0.0, dropout_cf=False):
+    def forward(self, x, dropout_inference=0.0, dropout_cf=False):
         # Forward through base distribution
         d = self._get_base_distribution()
         x = dist_forward(d, x)
 
         x = self._marginalize_input(x)
-        x = self._apply_dropout(x, test_dropout=test_dropout, dropout_inference=dropout_inference)
+        x = self._apply_dropout(x)
 
         assert x.isnan().sum() == 0, "NaN values encountered while performing bottom-up evaluation"
-        if test_dropout and dropout_cf:
+        if dropout_cf:
             return x, torch.zeros(x.shape).log()  # NOTE here we are not propagating the uncertainty from leaves
         return x
 
