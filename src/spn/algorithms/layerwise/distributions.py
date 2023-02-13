@@ -3,7 +3,6 @@ Module that contains a set of distributions with learnable parameters.
 """
 import logging
 from abc import abstractmethod
-from typing import List
 
 import numpy as np
 import torch
@@ -12,7 +11,6 @@ from torch import nn
 from torch.nn import functional as F
 
 from spn.algorithms.layerwise.utils import SamplingContext
-from spn.algorithms.layerwise.clipper import DistributionClipper
 from spn.algorithms.layerwise.layers import AbstractLayer, Sum
 from spn.algorithms.layerwise.type_checks import check_valid
 
@@ -84,7 +82,8 @@ def dist_sample(distribution: dist.Distribution, context: SamplingContext = None
 
     assert (
         samples.shape[1] == 1
-    ), "Something went wrong. First sample size dimension should be size 1 due to the distribution parameter dimensions. Please report this issue."
+    ), "Something went wrong. First sample size dimension should be size 1 due to the distribution parameter " \
+       "dimensions. Please report this issue."
     samples.squeeze_(1)
     n, d, c, r = samples.shape
 
@@ -177,7 +176,8 @@ class Leaf(AbstractLayer):
         return samples
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(in_features={self.in_features}, out_channels={self.out_channels}, dropout={self.dropout}, out_shape={self.out_shape})"
+        return f"{self.__class__.__name__}(in_features={self.in_features}, out_channels={self.out_channels}," \
+               f"dropout={self.dropout}, out_shape={self.out_shape})"
 
 
 class Normal(Leaf):

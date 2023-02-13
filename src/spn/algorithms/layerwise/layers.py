@@ -94,7 +94,9 @@ class Sum(AbstractLayer):
             ll_correction (bool, optional): Whether to use the LL correction or not.
 
         Returns:
-            torch.Tensor: Output of shape [batch, in_features, out_channels]
+            torch.Tensor: Output of shape [batch, in_features, out_channels]. It returns two tensors in case
+            TDI is performed. The first tensor corresponds to the expectations of the LL and the second one to
+            the corresponding variance.
         """
         # Save input if input cache is enabled
         if self._is_input_cache_enabled:
@@ -285,6 +287,10 @@ class Product(AbstractLayer):
         return self._conv_weights.device
 
     def _forward_cf(self, x: torch.Tensor, dropout_inference=0.0):
+        """
+        Forward method to perform TDI. It proceeds similarly to the conventional forward method, but it propagates
+        two tensors: one for the expectations and one for the variances.
+        """
         exps, vars = x
 
         # Only one product node
@@ -466,7 +472,7 @@ class CrossProduct(AbstractLayer):
         """Hack to obtain the current device, this layer lives on."""
         return self.unraveled_channel_indices.device
 
-    def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False, vars=None):
+    def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False, vars=None, ll_correction=False):
         """
         Product layer forward pass.
 
@@ -476,7 +482,9 @@ class CrossProduct(AbstractLayer):
             dropout_cf: (bool) whether to apply the closed-form dropout during inference
 
         Returns:
-            torch.Tensor: Output of shape [batch, ceil(in_features/2), channel * channel].
+            torch.Tensor: Output of shape [batch, ceil(in_features/2), channel * channel]. When performing TDI (i.e.,
+            dropout_inference > 0.0 and dropout_cf = True) it returns two tensors: one for the LL expectations and one
+            for the corresponding variances.
         """
         # Check if padding to next power of 2 is necessary
         if self.in_features != x.shape[1]:

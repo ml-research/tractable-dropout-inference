@@ -90,8 +90,7 @@ class RatSpn(nn.Module):
     """
     RAT SPN PyTorch implementation with layer-wise tensors.
 
-    See also:
-    https://arxiv.org/abs/1806.01910
+    See also: https://proceedings.mlr.press/v115/peharz20a.html
     """
 
     def __init__(self, config: RatSpnConfig):
@@ -148,12 +147,17 @@ class RatSpn(nn.Module):
         return x
 
     def _forward_cf(self, x: torch.Tensor, dropout_inference, ll_correction=False):
+        """
+        Run the forward pass with Tractable Dropout Inference. It returns the expectations of the classification
+        probabilities together, the (marginal) data likelihood, the conditional likelihood P(X|Y) together with their
+        corresponding variances.
+        """
         x, vars = self._leaf(x, dropout_inference=dropout_inference, dropout_cf=True)
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
 
         x, vars = self._forward_layers_cf(x, vars, dropout_inference=dropout_inference, ll_correction=ll_correction)
-        assert x.shape == vars.shape, "shape of expectaions and variances is different"
+        assert x.shape == vars.shape, "shape of expectations and variances is different"
         assert x.isnan().sum() == 0, breakpoint()
         assert vars.isnan().sum() == 0, breakpoint()
 

@@ -30,7 +30,7 @@ class RatNormal(Leaf):
         min_mean: float = None,
         max_mean: float = None,
     ):
-        """Creat a gaussian layer.
+        """Create a gaussian layer.
 
         Args:
             out_channels: Number of parallel representations for each input feature.

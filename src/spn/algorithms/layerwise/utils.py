@@ -12,11 +12,11 @@ def logsumexp(left, right, mask=None):
     Logsumexp with custom scalar mask to allow for negative values in the sum.
 
     Args:
-      tensor:
-      other:
+      left: First operand of the addition
+      right: Second operand of the addition
       mask:  (Default value = None)
 
-    Returns:
+    Returns: Tensor (in log space) result of the addition via logsumexp
 
     """
     if mask is None:
