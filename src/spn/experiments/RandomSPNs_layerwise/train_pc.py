@@ -9,6 +9,7 @@ import torchvision
 from torch import nn
 from torch import optim
 from torchvision import datasets, transforms
+from imagecorruptions import get_corruption_names
 
 from spn.experiments.RandomSPNs_layerwise.distributions import RatNormal
 from spn.experiments.RandomSPNs_layerwise.rat_spn import RatSpn, RatSpnConfig
@@ -378,7 +379,6 @@ def evaluate_corrupted_svhn_tdi(model_dir=None, dropout_inference=None, rat_S=20
         class_label: The class label of the data on which we want to perform the evaluation, if None the evaluation
         is performed over the whole dataset.
     """
-    from imagecorruptions import get_corruption_names
 
     device = sys.argv[1]
     torch.cuda.benchmark = True
