@@ -30,7 +30,7 @@ def logsumexp(left, right, mask=None):
 @contextmanager
 def provide_evidence(spn: nn.Module, evidence: torch.Tensor, requires_grad=False):
     """
-    Context manager for sampling with evidence. In this context, the SPN graph is reweighted with the likelihoods
+    Context manager for sampling with evidence. In this context, the SPN graph is re-weighted with the likelihoods
     computed using the given evidence.
 
     Args:

@@ -84,7 +84,7 @@ class IndependentMultivariate(Leaf):
         leaf_base_kwargs: Dict = None,
     ):
         """
-        Create multivariate distribution that only has non zero values in the covariance matrix on the diagonal.
+        Create multivariate distribution that only has non-zero values in the covariance matrix on the diagonal.
 
         Args:
             out_channels: Number of parallel representations for each input feature.

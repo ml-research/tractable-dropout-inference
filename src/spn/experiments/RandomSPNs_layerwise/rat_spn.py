@@ -16,7 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 def invert_permutation(p: torch.Tensor):
-    """(left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]
+    """
+    (left - maxes).exp() * mask[0] + (right - maxes).exp() * mask[1]
     The argument p is assumed to be some permutation of 0, 1, ..., len(p)-1. 
     Returns an array s, where s[i] gives the index of i in p.
     Taken from: https://stackoverflow.com/a/25535723, adapted to PyTorch.
@@ -151,6 +152,16 @@ class RatSpn(nn.Module):
         Run the forward pass with Tractable Dropout Inference. It returns the expectations of the classification
         probabilities together, the (marginal) data likelihood, the conditional likelihood P(X|Y) together with their
         corresponding variances.
+
+        Args:
+            x: Input.
+            dropout_inference: The dropout p paramter for TDI.
+            ll_correction: Whether to apply the LL correction for dropout.
+
+        Returns:
+            object: Tuple of tensors with the expectations of the classification probabilities with the corresponding
+            variance, the expectations of the marginal data likelihood with the corresponding variances, the expectation
+            of the conditional likelihood P(X|Y) with the corresponding variances.
         """
         x, vars = self._leaf(x, dropout_inference=dropout_inference, dropout_cf=True)
         assert x.isnan().sum() == 0, breakpoint()
@@ -253,6 +264,18 @@ class RatSpn(nn.Module):
         return x, vars, ll_x, var_x, heads_output, vars_copy
 
     def _forward_layers_cf(self, x, vars, dropout_inference=0.0, ll_correction=False):
+        """
+        Perform TDI through the inner layers (i.e. products and sums).
+
+        Args:
+            x: Input.
+            vars: The variances.
+            dropout_inference: The dropout p parameter to use for TDI.
+            ll_correction: Whethter to apply the LL correction for dropout.
+
+        Returns: Two tensors i.e. the expectations of the likelihood and the corresponding variances.
+
+        """
         for layer in self._inner_layers:
             x, vars = layer(x, dropout_inference=dropout_inference, dropout_cf=True, vars=vars,
                             ll_correction=ll_correction)

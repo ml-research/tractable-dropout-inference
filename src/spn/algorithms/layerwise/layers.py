@@ -84,7 +84,7 @@ class Sum(AbstractLayer):
     def forward(self, x: torch.Tensor, dropout_inference=0.0, dropout_cf=False, vars=None,
                 ll_correction=False):
         """
-        Sum layer foward pass.
+        Sum layer forward pass.
 
         Args:
             x: Input of shape [batch, in_features, in_channels].

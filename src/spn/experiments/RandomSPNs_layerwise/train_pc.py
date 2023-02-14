@@ -340,6 +340,9 @@ def make_spn(S, I, R, D, dropout, device, F=28 ** 2, C=10, leaf_distribution=Rat
         F: The number of data features.
         C: The number of classes i.e. the root heads.
         leaf_distribution: The type of leaf distributions.
+
+    Returns:
+        model (torch.nn.Module): The SPN model.
     """
 
     # Setup RatSpnConfig
@@ -378,6 +381,9 @@ def evaluate_corrupted_svhn_tdi(model_dir=None, dropout_inference=None, rat_S=20
         model: An already loaded model to evaluate (optional).
         class_label: The class label of the data on which we want to perform the evaluation, if None the evaluation
         is performed over the whole dataset.
+
+    Returns:
+        model (torch.nn.Module): The model used to perform inference.
     """
 
     device = sys.argv[1]
@@ -503,19 +509,24 @@ def test_tdi(model_dir=None, training_dataset=None, dropout_inference=None, batc
     """
     Perform inference with Tractable Dropout Inference.
     Args:
-        model_dir: The directory where the model is stored.
-        training_dataset: The dataset used to train the model.
-        dropout_inference: The dropout p parameter for the Tractable Dropout Inference, if 0 it performs.
+        model_dir (str): The directory where the model is stored.
+        training_dataset (str) : The name of the dataset used to train the model.
+        dropout_inference (float): The dropout p parameter for the Tractable Dropout Inference, if 0 it performs.
         the conventional probabilistic inference.
-        batch_size: The batch size.
-        rat_S: The number of sum nodes in a sum region of the SPN.
-        rat_I: The number of input leaf distributions.
-        rat_D: The depth of the SPN.
-        rat_R: The number of replicas.
-        rotation: The degrees of the rotation to apply to the image.
-        model: An already loaded model to evaluate (optional).
-        eval_train_set: If True, it evaluates the model with TDI on the training dataset.
-        ll_correction: If True it applies the likelihood correction.
+        batch_size (int, optional): The batch size.
+        rat_S (int): The number of sum nodes in a sum region of the SPN.
+        rat_I (int): The number of input leaf distributions.
+        rat_D (int): The depth of the SPN.
+        rat_R (int): The number of replicas.
+        rotation (float): The degrees of the rotation to apply to the image.
+        model (torch.nn.Module, optional): An already loaded model to evaluate (optional).
+        eval_train_set (bool, optional): If True, it evaluates the model with TDI on the training dataset.
+        ll_correction (bool, optional): If True it applies the likelihood correction.
+
+    Returns:
+        A tuple with the model used to perform inference, with the expectations of the classification
+        probabilities with the corresponding variances. It returns the model and the classification probabilities
+        when dropout is not applied at inference time.
     """
     device = sys.argv[1]
     use_cuda = True
@@ -653,6 +664,9 @@ def run_torch(n_epochs=100, batch_size=256, dropout=0.0, training_dataset='mnist
         training_dataset (str, optional): The name of the dataset to be used for training.
         eval_every_n_epochs (int, optional): The interval of epochs before evaluating the model during training.
         lr (float, optional): The learning rate.
+
+    Returns:
+        model (torch.nn.Module): The trained model.
     """
 
     assert len(sys.argv) == 2, "Usage: train_pc.py cuda/cpu"
