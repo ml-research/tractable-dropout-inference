@@ -11,6 +11,7 @@ Probabilistic circuits (PCs) are models that allow exact and tractable probabili
 
 To cite this work, refer to the following citation (in Bibtex format):
 
+```
 @misc{https://doi.org/10.48550/arxiv.2302.06544,
   doi = {10.48550/ARXIV.2302.06544},
   url = {https://arxiv.org/abs/2302.06544},
@@ -19,3 +20,4 @@ To cite this work, refer to the following citation (in Bibtex format):
   publisher = {arXiv},
   year = {2023},
 }
+```
