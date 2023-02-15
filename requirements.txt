@@ -3,7 +3,7 @@ scipy~=1.8.1
 statsmodels~=0.13.2
 networkx~=2.8.2
 joblib~=1.1.0
-matplotlib~=3.6.1
+matplotlib==3.6.1
 pydot~=1.4.2
 lark-parser
 tqdm~=4.64.0
@@ -22,8 +22,8 @@ scienceplots
 seaborn~=0.11.2
 
 --find-links https://download.pytorch.org/whl/torch_stable.html
-torch==1.8.1+cu101
-torchvision==0.9.1+cu101
+torch==1.8.1
+torchvision==0.9.1
 torchaudio==0.8.1
 
 pandas~=1.4.2
