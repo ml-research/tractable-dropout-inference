@@ -7,6 +7,7 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+import scienceplots
 
 
 colors = sns.color_palette("tab10")
