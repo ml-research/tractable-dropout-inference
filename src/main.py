@@ -19,7 +19,7 @@ from PIL import Image
 import datetime
 import scipy
 
-from fig_rotated_mnist import plot_figure
+from spn.experiments.RandomSPNs_layerwise.fig_rotated_mnist import plot_figure
 
 
 class CustomTensorDataset(Dataset):
